@@ -324,6 +324,85 @@ function App(){
   const goHome=()=>{stopCam();if(evsRef.current)evsRef.current.close();setPage('home');setActiveId(null);loadManifests(sessionId);};
   const goPos=()=>{setAppMode('pos');setPage('pos');setLastResult(null);setTimeout(()=>manualRef.current&&manualRef.current.focus(),200);};
   const goRecv=()=>{stopCam();setAppMode('receiving');setPage('recv');setLastResult(null);};
+
+  const deleteActiveManifest=async()=>{
+    if(!activeManifest||!activeId||!sessionId)return;
+
+    const ok=window.confirm(
+      '¿Seguro que quieres borrar este manifiesto?\n\nEsto eliminará también lo recibido y las ventas de este manifiesto.'
+    );
+
+    if(!ok)return;
+
+    try{
+      const res=await fetch(
+        '/api/manifest/'+encodeURIComponent(sessionId)+'/'+encodeURIComponent(activeId),
+        {method:'DELETE'}
+      );
+
+      const data=await res.json().catch(()=>({}));
+
+      if(!res.ok||data.error){
+        throw new Error(data.error||'No se pudo borrar el manifiesto');
+      }
+
+      try{
+        localStorage.removeItem('pos_rcv_'+activeId);
+        localStorage.removeItem('pos_sales_'+activeId);
+      }catch{}
+
+      setManifests(prev=>prev.filter(m=>m.id!==activeId));
+      setReceived({});
+      setSalesLog([]);
+      setLastResult(null);
+      setActiveId(null);
+      setPage('home');
+
+      loadManifests(sessionId);
+      alert('Manifiesto borrado correctamente.');
+    }catch(e){
+      alert('No se pudo borrar: '+e.message);
+    }
+  };
+
+  useEffect(()=>{
+    const old=document.getElementById('pos-delete-manifest-button');
+    if(old)old.remove();
+
+    if(!activeManifest||!activeId||!sessionId)return;
+    if(page==='home'||page==='settings')return;
+
+    const wrap=document.createElement('div');
+    wrap.id='pos-delete-manifest-button';
+    wrap.style.position='fixed';
+    wrap.style.left='12px';
+    wrap.style.bottom='12px';
+    wrap.style.zIndex='99999';
+
+    const btn=document.createElement('button');
+    btn.textContent='🗑️ Borrar manifiesto';
+    btn.style.background='#ff3d5722';
+    btn.style.border='1px solid '+C.red;
+    btn.style.color=C.red;
+    btn.style.borderRadius='10px';
+    btn.style.padding='12px 14px';
+    btn.style.fontFamily='monospace';
+    btn.style.fontWeight='700';
+    btn.style.fontSize='12px';
+    btn.style.cursor='pointer';
+    btn.style.boxShadow='0 8px 24px rgba(0,0,0,.35)';
+    btn.onclick=deleteActiveManifest;
+
+    wrap.appendChild(btn);
+    document.body.appendChild(wrap);
+
+    return()=>{
+      const el=document.getElementById('pos-delete-manifest-button');
+      if(el)el.remove();
+    };
+  },[page,activeManifest,activeId,sessionId]);
+
+
   const downloadCsv=type=>{if(!sessionId)return;window.open('/api/export/'+type+'/'+sessionId,'_blank');};
   const s=p=>p;
   if(!sessionId){

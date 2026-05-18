@@ -202,6 +202,48 @@ app.get('/api/events/:sid', (req, res) => {
   });
 });
 
+
+app.delete('/api/manifest/:sid/:mid', async (req, res) => {
+  const { sid, mid } = req.params;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    await client.query(
+      'DELETE FROM pos_sales WHERE session_id = $1 AND manifest_id = $2',
+      [sid, mid]
+    );
+
+    await client.query(
+      'DELETE FROM pos_received WHERE session_id = $1 AND manifest_id = $2',
+      [sid, mid]
+    );
+
+    await client.query(
+      'DELETE FROM pos_manifests WHERE session_id = $1 AND id = $2',
+      [sid, mid]
+    );
+
+    await client.query('COMMIT');
+
+    notify(sid, {
+      type: 'delete_manifest',
+      manifest_id: mid
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {}
+
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
