@@ -1,12 +1,12 @@
 {
   "name": "Klou POS",
   "short_name": "Klou POS",
-  "description": "Inventory and sales POS system",
+  "description": "Klou POS inventory and sales system",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#080c10",
-  "theme_color": "#00d4ff",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
   "orientation": "portrait",
   "icons": [
     {
