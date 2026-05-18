@@ -45,11 +45,64 @@ function App(){
   useEffect(()=>{if((page==='recv'||page==='pos')&&hasBD&&!detRef.current){try{detRef.current=new window.BarcodeDetector({formats:['ean_13','upc_a','upc_e','code_128','code_39','qr_code']});}catch{try{detRef.current=new window.BarcodeDetector();}catch{}}};},[page,hasBD]);
   const startCam=async()=>{setCamError('');try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920}}});streamRef.current=s;if(videoRef.current){videoRef.current.srcObject=s;await videoRef.current.play();}setCameraActive(true);scanningRef.current=true;camLoop();}catch(e){setCamError('Sin acceso: '+e.message);}};
   const stopCam=()=>{scanningRef.current=false;streamRef.current&&streamRef.current.getTracks().forEach(t=>t.stop());streamRef.current=null;setCameraActive(false);};
-  const camLoop=async()=>{if(!scanningRef.current||!detRef.current||!videoRef.current)return;if(videoRef.current.readyState>=2){try{const codes=await detRef.current.detect(videoRef.current);if(codes.length>0){onScan(codes[0].rawValue);await new Promise(r=>setTimeout(r,1400));}}catch{}}if(scanningRef.current)requestAnimationFrame(camLoop);};
+  const camLoop=async()=>{if(!scanningRef.current||!detRef.current||!videoRef.current)return;if(videoRef.current.readyState>=2){try{const codes=await detRef.current.detect(videoRef.current);if(codes.length>0){onScan(codes[0].rawValue);await new Promise(r=>setTimeout(r,900));}}catch{}}if(scanningRef.current)requestAnimationFrame(camLoop);};
   useEffect(()=>()=>stopCam(),[]);
   const pulse=type=>{setFlash(type);setTimeout(()=>setFlash(null),350);if(navigator.vibrate)navigator.vibrate(type==='ok'?[70]:[70,40,70]);};
-  const processCode=useCallback(async (itemNum,barcode='')=>{itemNum=itemNum.toString().trim();if(appMode==='receiving'){const item=mMap[itemNum];if(!item){setLastResult({itemNum,status:'miss'});pulse('miss');return;}const newQty=(received[itemNum]||0)+1;const newRcv=Object.assign({},received,{[itemNum]:newQty});setReceived(newRcv);setLastResult(Object.assign({},item,{status:'found'}));pulse('ok');LS.set('pos_rcv_'+activeId,newRcv);api.post('/api/receive',{session_id:sessionId,manifest_id:activeId,item_num:itemNum,qty:newQty}).then(()=>{setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}).catch(()=>setSyncDot('err'));}else{const item=mMap[itemNum];if(!item){setLastResult({itemNum,status:'miss'});pulse('miss');return;}if((stock[itemNum]||0)<=0){setLastResult(Object.assign({},item,{status:'nostock'}));pulse('miss');return;}setPendingSale({item,barcode});setSalePrice(item.unitRetail.toFixed(2));setTimeout(()=>priceRef.current&&priceRef.current.select(),150);}},[appMode,mMap,received,stock,activeId,sessionId]);
-  const onScan=useCallback(raw=>{raw=raw.toString().trim();const now=Date.now();if(raw===lastCodeRef.current&&now-lastTimeRef.current<2000)return;lastCodeRef.current=raw;lastTimeRef.current=now;if(upcMap[raw])processCode(upcMap[raw],raw);else{setUpcPending(raw);stopCam();setTimeout(()=>upcRef.current&&upcRef.current.focus(),100);}},[upcMap,processCode]);
+  const processCode=useCallback(async itemNum=>{
+  itemNum=itemNum.toString().trim();
+
+  if(appMode==='receiving'){
+    const item=mMap[itemNum];
+
+    if(!item){
+      setLastResult({itemNum,status:'miss'});
+      pulse('miss');
+      return;
+    }
+
+    setReceived(prev=>{
+      const newQty=(prev[itemNum]||0)+1;
+      const newRcv=Object.assign({},prev,{[itemNum]:newQty});
+
+      setLastResult(Object.assign({},item,{status:'found'}));
+      pulse('ok');
+      LS.set('pos_rcv_'+activeId,newRcv);
+
+      api.post('/api/receive',{
+        session_id:sessionId,
+        manifest_id:activeId,
+        item_num:itemNum,
+        qty:newQty
+      }).then(()=>{
+        setSyncDot('ok');
+        setTimeout(()=>setSyncDot(''),1500);
+      }).catch(()=>setSyncDot('err'));
+
+      return newRcv;
+    });
+
+  }else{
+    const item=mMap[itemNum];
+
+    if(!item){
+      setLastResult({itemNum,status:'miss'});
+      pulse('miss');
+      return;
+    }
+
+    if((stock[itemNum]||0)<=0){
+      setLastResult(Object.assign({},item,{status:'nostock'}));
+      pulse('miss');
+      return;
+    }
+
+    setPendingSale({item});
+    setSalePrice(item.unitRetail.toFixed(2));
+    setTimeout(()=>priceRef.current&&priceRef.current.select(),150);
+  }
+},[appMode,mMap,stock,activeId,sessionId]);
+
+  const onScan=useCallback(raw=>{raw=raw.toString().trim();const now=Date.now();if(raw===lastCodeRef.current&&now-lastTimeRef.current<900)return;lastCodeRef.current=raw;lastTimeRef.current=now;if(upcMap[raw])processCode(upcMap[raw],raw);else{setUpcPending(raw);stopCam();setTimeout(()=>upcRef.current&&upcRef.current.focus(),100);}},[upcMap,processCode]);
   const confirmUpc=()=>{const n=upcInput.trim();if(!n||!upcPending)return;const b=upcPending;setUpcMap(p=>Object.assign({},p,{[b]:n}));api.post('/api/barcode',{session_id:sessionId,barcode:b,item_num:n}).catch(()=>setSyncDot('err'));processCode(n,b);setUpcPending(null);setUpcInput('');setTimeout(startCam,300);};
   const onManual=e=>{e&&e.preventDefault();if(!manualInput.trim())return;processCode(manualInput.trim());setManualInput('');manualRef.current&&manualRef.current.focus();};
   const confirmSale=async payMethod=>{if(!pendingSale)return;const{item}=pendingSale;const barcode=pendingSale.barcode||'';const price=payMethod==='gift'?0:(parseFloat(salePrice)||0);const now=new Date();const time=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});const sale_date=now.toISOString().slice(0,10);const sale_datetime=now.toISOString();const id=genId();const tx={id,item_num:item.itemNum,itemNum:item.itemNum,barcode,description:item.description,brand:item.brand,price,pay_method:payMethod,payMethod,sale_time:time,time,sale_date,sale_datetime,manifest_id:activeId};const newSales=[tx,...salesLog];setSalesLog(newSales);setLastResult(Object.assign({},item,{status:'sold',price,payMethod}));setPendingSale(null);setSalePrice('');pulse('ok');LS.set('pos_sales_'+activeId,newSales);api.post('/api/sale',{id,session_id:sessionId,manifest_id:activeId,item_num:item.itemNum,barcode,description:item.description,brand:item.brand,price,pay_method:payMethod,sale_time:time,sale_date,sale_datetime}).then(()=>{setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}).catch(()=>setSyncDot('err'));setTimeout(()=>manualRef.current&&manualRef.current.focus(),100);};
