@@ -105,7 +105,7 @@ function App(){
   const onScan=useCallback(raw=>{raw=raw.toString().trim();const now=Date.now();if(raw===lastCodeRef.current&&now-lastTimeRef.current<900)return;lastCodeRef.current=raw;lastTimeRef.current=now;if(upcMap[raw])processCode(upcMap[raw],raw);else{setUpcPending(raw);stopCam();setTimeout(()=>upcRef.current&&upcRef.current.focus(),100);}},[upcMap,processCode]);
   const confirmUpc=()=>{const n=upcInput.trim();if(!n||!upcPending)return;const b=upcPending;setUpcMap(p=>Object.assign({},p,{[b]:n}));api.post('/api/barcode',{session_id:sessionId,barcode:b,item_num:n}).catch(()=>setSyncDot('err'));processCode(n,b);setUpcPending(null);setUpcInput('');setTimeout(startCam,300);};
   const onManual=e=>{e&&e.preventDefault();if(!manualInput.trim())return;processCode(manualInput.trim());setManualInput('');manualRef.current&&manualRef.current.focus();};
-  const confirmSale=async payMethod=>{if(!pendingSale)return;const{item}=pendingSale;const barcode=pendingSale.barcode||'';const price=payMethod==='gift'?0:(parseFloat(salePrice)||0);const now=new Date();const time=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});const sale_date=now.toISOString().slice(0,10);const sale_datetime=now.toISOString();const id=genId();const tx={id,item_num:item.itemNum,itemNum:item.itemNum,barcode,description:item.description,brand:item.brand,price,pay_method:payMethod,payMethod,sale_time:time,time,sale_date,sale_datetime,manifest_id:activeId};const newSales=[tx,...salesLog];setSalesLog(newSales);setLastResult(Object.assign({},item,{status:'sold',price,payMethod}));setPendingSale(null);setSalePrice('');pulse('ok');LS.set('pos_sales_'+activeId,newSales);api.post('/api/sale',{id,session_id:sessionId,manifest_id:activeId,item_num:item.itemNum,barcode,description:item.description,brand:item.brand,price,pay_method:payMethod,sale_time:time,sale_date,sale_datetime}).then(()=>{setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}).catch(()=>setSyncDot('err'));setTimeout(()=>manualRef.current&&manualRef.current.focus(),100);};
+  const confirmSale=async payMethod=>{if(!pendingSale)return;const{item}=pendingSale;const barcode=pendingSale.barcode||'';const price=payMethod==='gift'?0:(parseFloat(salePrice)||0);const now=new Date();const time=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});const sale_date=now.toISOString().slice(0,10);const sale_datetime=now.toISOString();const id=genId();const tx={id,item_num:item.itemNum,itemNum:item.itemNum,barcode,description:item.description,brand:item.brand,price,pay_method:payMethod,payMethod,sale_time:time,time,sale_date,sale_datetime,manifest_id:activeId,created_at:new Date().toISOString()};const newSales=[tx,...salesLog];setSalesLog(newSales);setLastResult(Object.assign({},item,{status:'sold',price,payMethod}));setPendingSale(null);setSalePrice('');pulse('ok');LS.set('pos_sales_'+activeId,newSales);api.post('/api/sale',{id,session_id:sessionId,manifest_id:activeId,item_num:item.itemNum,barcode,description:item.description,brand:item.brand,price,pay_method:payMethod,sale_time:time,sale_date,sale_datetime}).then(()=>{setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}).catch(()=>setSyncDot('err'));setTimeout(()=>manualRef.current&&manualRef.current.focus(),100);};
   const totalExp=activeManifest&&activeManifest.items?activeManifest.items.reduce((s,i)=>s+i.qty,0):0;
   const totalRcv=Object.values(received).reduce((s,v)=>s+v,0);
   const pct=totalExp>0?Math.round(totalRcv/totalExp*100):0;
@@ -113,6 +113,214 @@ function App(){
   salesLog.forEach(t=>{const pm=t.pay_method||t.payMethod;if(salesByPay[pm]!==undefined){salesByPay[pm]+=Number(t.price);cntByPay[pm]+=1;}});
   const totalSales=salesLog.reduce((s,t)=>s+Number(t.price),0);
   const totalStockLeft=Object.values(stock).reduce((s,v)=>s+v,0);
+  const csvCell=v=>{
+    if(v===null||v===undefined)return '';
+    const str=String(v).replace(/"/g,'""');
+    return /[",\n]/.test(str)?'"'+str+'"':str;
+  };
+
+  const safeFileName=name=>{
+    return String(name||'report')
+      .replace(/[^a-z0-9_\-]+/gi,'_')
+      .replace(/^_+|_+$/g,'')
+      .substring(0,60);
+  };
+
+  const todayISO=()=>{
+    const d=new Date();
+    const y=d.getFullYear();
+    const m=String(d.getMonth()+1).padStart(2,'0');
+    const day=String(d.getDate()).padStart(2,'0');
+    return y+'-'+m+'-'+day;
+  };
+
+  const saleDateKey=t=>{
+    try{
+      const raw=t.created_at||t.createdAt||null;
+      if(raw){
+        const d=new Date(raw);
+        if(!isNaN(d)){
+          const y=d.getFullYear();
+          const m=String(d.getMonth()+1).padStart(2,'0');
+          const day=String(d.getDate()).padStart(2,'0');
+          return y+'-'+m+'-'+day;
+        }
+      }
+    }catch{}
+    return todayISO();
+  };
+
+  const saleDateText=t=>{
+    try{
+      const raw=t.created_at||t.createdAt||null;
+      if(raw){
+        const d=new Date(raw);
+        if(!isNaN(d))return d.toLocaleDateString('en-US');
+      }
+    }catch{}
+    return new Date().toLocaleDateString('en-US');
+  };
+
+  const downloadCSV=(fileName,rows)=>{
+    const csv='\ufeff'+rows.map(r=>r.map(csvCell).join(',')).join('\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadReceivedReport=()=>{
+    if(!activeManifest||!activeManifest.items)return;
+
+    const rows=[
+      ['Inventory POS - Recibido vs Esperado'],
+      ['Manifest',activeManifest.name||activeManifest.id],
+      ['Session',sessionId],
+      ['Report Date',new Date().toLocaleString('en-US')],
+      [],
+      ['Item #','Description','Brand','Expected Qty','Received Qty','Difference','Unit Retail','Expected Total','Received Total']
+    ];
+
+    activeManifest.items.forEach(item=>{
+      const expected=Number(item.qty)||0;
+      const rec=Number(received[item.itemNum]||0);
+      const unit=Number(item.unitRetail)||0;
+
+      rows.push([
+        item.itemNum,
+        item.description||'',
+        item.brand||'',
+        expected,
+        rec,
+        rec-expected,
+        unit.toFixed(2),
+        (expected*unit).toFixed(2),
+        (rec*unit).toFixed(2)
+      ]);
+    });
+
+    const totalExpected=activeManifest.items.reduce((sum,item)=>sum+(Number(item.qty)||0),0);
+    const totalReceived=activeManifest.items.reduce((sum,item)=>sum+Number(received[item.itemNum]||0),0);
+
+    rows.push([]);
+    rows.push(['TOTALS','','',totalExpected,totalReceived,totalReceived-totalExpected,'','','']);
+
+    downloadCSV(
+      'recibido_vs_esperado_'+safeFileName(activeManifest.name)+'_'+todayISO()+'.csv',
+      rows
+    );
+  };
+
+  const downloadSalesToday=()=>{
+    if(!activeManifest)return;
+
+    const today=todayISO();
+    const todays=salesLog.filter(t=>saleDateKey(t)===today);
+    const totalAmount=todays.reduce((sum,t)=>sum+Number(t.price||0),0);
+
+    const byPay={};
+    todays.forEach(t=>{
+      const pm=t.pay_method||t.payMethod||'unknown';
+      if(!byPay[pm])byPay[pm]={qty:0,total:0};
+      byPay[pm].qty+=1;
+      byPay[pm].total+=Number(t.price||0);
+    });
+
+    const rows=[
+      ['Inventory POS - Ventas de Hoy'],
+      ['Manifest',activeManifest.name||activeManifest.id],
+      ['Session',sessionId],
+      ['Date',today],
+      ['Cantidad Vendida Total',todays.length],
+      ['Total Vendido',totalAmount.toFixed(2)],
+      [],
+      ['Resumen por Metodo de Pago'],
+      ['Metodo de Pago','Cantidad Vendida','Total Vendido']
+    ];
+
+    Object.keys(byPay).forEach(pm=>{
+      rows.push([pm,byPay[pm].qty,byPay[pm].total.toFixed(2)]);
+    });
+
+    rows.push([]);
+    rows.push(['Transacciones']);
+    rows.push(['Fecha','Hora','Item #','Description','Brand','Precio Vendido','Metodo de Pago','Manifest']);
+
+    todays.forEach(t=>{
+      rows.push([
+        saleDateText(t),
+        t.sale_time||t.time||'',
+        t.item_num||t.itemNum||'',
+        t.description||'',
+        t.brand||'',
+        Number(t.price||0).toFixed(2),
+        t.pay_method||t.payMethod||'',
+        activeManifest.name||activeManifest.id
+      ]);
+    });
+
+    downloadCSV(
+      'ventas_de_hoy_'+safeFileName(activeManifest.name)+'_'+today+'.csv',
+      rows
+    );
+  };
+
+  useEffect(()=>{
+    const old=document.getElementById('pos-download-buttons');
+    if(old)old.remove();
+
+    if(!activeManifest||!sessionId)return;
+
+    const wrap=document.createElement('div');
+    wrap.id='pos-download-buttons';
+    wrap.style.position='fixed';
+    wrap.style.right='12px';
+    wrap.style.bottom='12px';
+    wrap.style.zIndex='99999';
+    wrap.style.display='flex';
+    wrap.style.flexDirection='column';
+    wrap.style.gap='8px';
+    wrap.style.maxWidth='260px';
+
+    const makeBtn=(text,bg,border,color,fn)=>{
+      const b=document.createElement('button');
+      b.textContent=text;
+      b.style.background=bg;
+      b.style.border='1px solid '+border;
+      b.style.color=color;
+      b.style.borderRadius='10px';
+      b.style.padding='12px 14px';
+      b.style.fontFamily='monospace';
+      b.style.fontWeight='700';
+      b.style.fontSize='12px';
+      b.style.cursor='pointer';
+      b.style.boxShadow='0 8px 24px rgba(0,0,0,.35)';
+      b.onclick=fn;
+      return b;
+    };
+
+    if(page==='recv'){
+      wrap.appendChild(makeBtn('⬇️ Excel Recibido vs Esperado',C.green+'22',C.green,C.green,downloadReceivedReport));
+    }
+
+    if(page==='pos'||page==='summary'){
+      wrap.appendChild(makeBtn('⬇️ Excel Ventas de Hoy',C.yellow+'22',C.yellow,C.yellow,downloadSalesToday));
+    }
+
+    if(wrap.children.length>0)document.body.appendChild(wrap);
+
+    return()=>{
+      const el=document.getElementById('pos-download-buttons');
+      if(el)el.remove();
+    };
+  },[page,activeManifest,received,salesLog,sessionId]);
+
+
   const goHome=()=>{stopCam();if(evsRef.current)evsRef.current.close();setPage('home');setActiveId(null);loadManifests(sessionId);};
   const goPos=()=>{setAppMode('pos');setPage('pos');setLastResult(null);setTimeout(()=>manualRef.current&&manualRef.current.focus(),200);};
   const goRecv=()=>{stopCam();setAppMode('receiving');setPage('recv');setLastResult(null);};
