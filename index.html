@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><meta name="mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-capable" content="yes"/><title>Inventory + POS</title><script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script><style>*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}body{background:#080c10;font-family:monospace;overscroll-behavior:none;}
+<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><meta name="mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-capable" content="yes"/><title>Inventory + POS</title><script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script><script src="https://unpkg.com/html5-qrcode"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script><style>*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}body{background:#080c10;font-family:monospace;overscroll-behavior:none;}
 /* Mobile floating buttons side by side */
 @media (max-width: 700px) {
   #pos-delete-manifest-button {
@@ -894,6 +894,172 @@ function App(){
       setAppMode('receiving');
     }
   },[sessionId,activeId,manifests]);
+
+
+  useEffect(()=>{
+    const old=document.getElementById('pos-ios-camera-fallback');
+    if(old)old.remove();
+
+    if(!(page==='recv'||page==='pos'))return;
+    if(!activeManifest||!sessionId)return;
+
+    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent) || 
+      (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+
+    const needsFallback=isIOS || !('BarcodeDetector' in window);
+
+    if(!needsFallback)return;
+
+    const wrap=document.createElement('div');
+    wrap.id='pos-ios-camera-fallback';
+    wrap.style.position='fixed';
+    wrap.style.top='84px';
+    wrap.style.right='12px';
+    wrap.style.zIndex='99999';
+
+    const btn=document.createElement('button');
+    btn.textContent='📱 Cámara iPhone';
+    btn.style.background=C.accent;
+    btn.style.border='none';
+    btn.style.color=C.bg;
+    btn.style.borderRadius='10px';
+    btn.style.padding='10px 12px';
+    btn.style.fontFamily='monospace';
+    btn.style.fontWeight='800';
+    btn.style.fontSize='12px';
+    btn.style.cursor='pointer';
+    btn.style.boxShadow='0 8px 24px rgba(0,0,0,.35)';
+
+    btn.onclick=()=>{
+      if(!window.Html5Qrcode){
+        alert('El scanner para iPhone todavía no cargó. Refresca la página e intenta otra vez.');
+        return;
+      }
+
+      const existing=document.getElementById('pos-ios-camera-overlay');
+      if(existing)existing.remove();
+
+      const overlay=document.createElement('div');
+      overlay.id='pos-ios-camera-overlay';
+      overlay.style.position='fixed';
+      overlay.style.inset='0';
+      overlay.style.background='rgba(0,0,0,.94)';
+      overlay.style.zIndex='100000';
+      overlay.style.display='flex';
+      overlay.style.flexDirection='column';
+      overlay.style.alignItems='center';
+      overlay.style.justifyContent='center';
+      overlay.style.padding='16px';
+      overlay.style.fontFamily='monospace';
+
+      const box=document.createElement('div');
+      box.style.background=C.panel;
+      box.style.border='1px solid '+C.accent;
+      box.style.borderRadius='16px';
+      box.style.padding='14px';
+      box.style.width='100%';
+      box.style.maxWidth='430px';
+
+      const title=document.createElement('div');
+      title.textContent='📱 Scanner iPhone';
+      title.style.color=C.accent;
+      title.style.fontWeight='800';
+      title.style.fontSize='18px';
+      title.style.marginBottom='10px';
+
+      const note=document.createElement('div');
+      note.textContent='Apunta al código de barra. Mantén el teléfono quieto y con buena luz.';
+      note.style.color=C.muted;
+      note.style.fontSize='12px';
+      note.style.marginBottom='10px';
+
+      const reader=document.createElement('div');
+      reader.id='ios-html5-reader';
+      reader.style.width='100%';
+      reader.style.overflow='hidden';
+      reader.style.borderRadius='12px';
+      reader.style.background='#000';
+
+      const close=document.createElement('button');
+      close.textContent='Cerrar cámara';
+      close.style.width='100%';
+      close.style.marginTop='12px';
+      close.style.background=C.red+'22';
+      close.style.border='1px solid '+C.red;
+      close.style.color=C.red;
+      close.style.borderRadius='10px';
+      close.style.padding='12px';
+      close.style.fontWeight='800';
+      close.style.fontFamily='monospace';
+      close.style.cursor='pointer';
+
+      box.appendChild(title);
+      box.appendChild(note);
+      box.appendChild(reader);
+      box.appendChild(close);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      let scanner=null;
+
+      const stopScanner=()=>{
+        try{
+          if(scanner){
+            scanner.stop()
+              .then(()=>scanner.clear())
+              .catch(()=>{});
+          }
+        }catch{}
+        overlay.remove();
+      };
+
+      close.onclick=stopScanner;
+
+      try{
+        scanner=new Html5Qrcode('ios-html5-reader');
+
+        const formats=window.Html5QrcodeSupportedFormats ? [
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.QR_CODE
+        ] : undefined;
+
+        scanner.start(
+          {facingMode:'environment'},
+          {
+            fps:6,
+            qrbox:{width:280,height:160},
+            aspectRatio:1.777,
+            formatsToSupport:formats
+          },
+          decodedText=>{
+            onScan(decodedText);
+          },
+          errorMessage=>{}
+        ).catch(err=>{
+          alert('No se pudo abrir la cámara del iPhone: '+err);
+        });
+
+      }catch(e){
+        alert('Error iniciando scanner iPhone: '+e.message);
+      }
+    };
+
+    wrap.appendChild(btn);
+    document.body.appendChild(wrap);
+
+    return()=>{
+      const el=document.getElementById('pos-ios-camera-fallback');
+      if(el)el.remove();
+
+      const overlay=document.getElementById('pos-ios-camera-overlay');
+      if(overlay)overlay.remove();
+    };
+  },[page,activeManifest,sessionId,onScan]);
 
 if(!sessionId){
     const code=entryCode;
