@@ -29,7 +29,13 @@
   }
 }
 
-</style></head><body><div id="root"></div><script type="text/babel">
+</style>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon.svg">
+<meta name="theme-color" content="#00d4ff">
+<meta name="apple-mobile-web-app-title" content="Inventory POS">
+
+</head><body><div id="root"></div><script type="text/babel">
 const {useState,useRef,useEffect,useCallback,useMemo}=React;
 const C={bg:"#080c10",panel:"#0e1520",card:"#131c28",border:"#1a2840",accent:"#00d4ff",green:"#00e676",yellow:"#ffd600",red:"#ff3d57",orange:"#ff9100",purple:"#c07aff",cash:"#00e676",cardC:"#00d4ff",whatnot:"#ff6ec7",text:"#e8f4fd",muted:"#3d5a78",dim:"#1e2d3d"};
 const PAY=[{id:"cash",label:"💵 Cash",emoji:"💵",color:C.cash},{id:"card",label:"💳 Tarjeta",emoji:"💳",color:C.cardC},{id:"whatnot",label:"📦 Whatnot",emoji:"📦",color:C.whatnot},{id:"gift",label:"🎁 Gift",emoji:"🎁",color:C.purple}];
@@ -1258,4 +1264,19 @@ if(!sessionId){
   return React.createElement('div',{style:{minHeight:'100vh',background:C.bg,color:C.red,padding:20}},'Página no encontrada');
 }
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
-</script></body></html>
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/service-worker.js')
+      .then(function (reg) {
+        reg.update();
+      })
+      .catch(function (err) {
+        console.log('Service worker error:', err);
+      });
+  });
+}
+</script>
+
+</body></html>
