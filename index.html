@@ -155,7 +155,24 @@ function App(){
 
   const onScan=useCallback(raw=>{raw=raw.toString().trim();const now=Date.now();if(raw===lastCodeRef.current&&now-lastTimeRef.current<1500)return;lastCodeRef.current=raw;lastTimeRef.current=now;if(upcMap[raw])processCode(upcMap[raw],raw);else{setUpcPending(raw);stopCam();setTimeout(()=>upcRef.current&&upcRef.current.focus(),100);}},[upcMap,processCode]);
   const confirmUpc=()=>{const n=upcInput.trim();if(!n||!upcPending)return;const b=upcPending;setUpcMap(p=>Object.assign({},p,{[b]:n}));api.post('/api/barcode',{session_id:sessionId,barcode:b,item_num:n}).catch(()=>setSyncDot('err'));processCode(n,b);setUpcPending(null);setUpcInput('');setTimeout(startCam,300);};
-  const onManual=e=>{e&&e.preventDefault();if(!manualInput.trim())return;processCode(manualInput.trim());setManualInput('');manualRef.current&&manualRef.current.focus();};
+  const onManual=e=>{
+  e&&e.preventDefault();
+
+  const raw=manualInput.trim();
+  if(!raw)return;
+
+  setManualInput('');
+
+  // Si el número existe como Item # en el manifiesto, lo procesa directo.
+  // Si no existe, lo trata como barcode del scanner Eyoyo para aprenderlo.
+  if(mMap[raw]){
+    processCode(raw);
+  }else{
+    onScan(raw);
+  }
+
+  manualRef.current&&manualRef.current.focus();
+};
   const confirmSale=async payMethod=>{if(!pendingSale)return;const{item}=pendingSale;const barcode=pendingSale.barcode||'';const price=payMethod==='gift'?0:(parseFloat(salePrice)||0);const now=new Date();const time=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});const sale_date=now.toISOString().slice(0,10);const sale_datetime=now.toISOString();const id=genId();const tx={id,item_num:item.itemNum,itemNum:item.itemNum,barcode,description:item.description,brand:item.brand,price,pay_method:payMethod,payMethod,sale_time:time,time,sale_date,sale_datetime,manifest_id:activeId,created_at:new Date().toISOString()};const newSales=[tx,...salesLog];setSalesLog(newSales);setLastResult(Object.assign({},item,{status:'sold',price,payMethod}));setPendingSale(null);setSalePrice('');pulse('ok');LS.set('pos_sales_'+activeId,newSales);api.post('/api/sale',{id,session_id:sessionId,manifest_id:activeId,item_num:item.itemNum,barcode,description:item.description,brand:item.brand,price,pay_method:payMethod,sale_time:time,sale_date,sale_datetime}).then(()=>{setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}).catch(()=>setSyncDot('err'));setTimeout(()=>manualRef.current&&manualRef.current.focus(),100);};
   const totalExp=activeManifest&&activeManifest.items?activeManifest.items.reduce((s,i)=>s+i.qty,0):0;
   const totalRcv=Object.values(received).reduce((s,v)=>s+v,0);
