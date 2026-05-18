@@ -43,9 +43,9 @@ function App(){
   const [entryCode,setEntryCode]=useState(()=>genCode());
   const [manifests,setManifests]=useState([]);
   const [upcMap,setUpcMap]=useState(()=>LS.get('pos_upc_map',{}));
-  const [activeId,setActiveId]=useState(null);
-  const [appMode,setAppMode]=useState('receiving');
-  const [page,setPage]=useState('home');
+  const [activeId,setActiveId]=useState(()=>LS.get('pos_active_manifest',null));
+  const [appMode,setAppMode]=useState(()=>LS.get('pos_app_mode','receiving'));
+  const [page,setPage]=useState(()=>LS.get('pos_page','home'));
   const [received,setReceived]=useState({});
   const [salesLog,setSalesLog]=useState([]);
   const [cart,setCart]=useState([]);
@@ -872,7 +872,30 @@ function App(){
 
   const downloadCsv=type=>{if(!sessionId)return;window.open('/api/export/'+type+'/'+sessionId,'_blank');};
   const s=p=>p;
-  if(!sessionId){
+  
+  useEffect(()=>{
+    if(!sessionId)return;
+
+    LS.set('pos_page',page);
+    LS.set('pos_app_mode',appMode);
+    LS.set('pos_active_manifest',activeId);
+  },[sessionId,page,appMode,activeId]);
+
+  useEffect(()=>{
+    if(!sessionId)return;
+
+    if(activeId&&manifests.length>0&&!manifests.some(m=>m.id===activeId)){
+      LS.set('pos_active_manifest',null);
+      LS.set('pos_page','home');
+      LS.set('pos_app_mode','receiving');
+
+      setActiveId(null);
+      setPage('home');
+      setAppMode('receiving');
+    }
+  },[sessionId,activeId,manifests]);
+
+if(!sessionId){
     const code=entryCode;
     const setCode=setEntryCode;
     return React.createElement('div',{style:{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',padding:24,color:C.text}},
