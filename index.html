@@ -73,6 +73,9 @@ function App(){
   const videoRef=useRef(null),streamRef=useRef(null),detRef=useRef(null);
   const scanningRef=useRef(false),lastCodeRef=useRef(null),lastTimeRef=useRef(0);
   const manualRef=useRef(null),upcRef=useRef(null),priceRef=useRef(null),evsRef=useRef(null),fileRef=useRef(null);
+  
+  const eyoyoGlobalBufferRef=useRef('');
+  const eyoyoGlobalTimerRef=useRef(null);
   const activeManifest=useMemo(()=>manifests.find(m=>m.id===activeId),[manifests,activeId]);
   const mMap=useMemo(()=>{const map={};activeManifest&&activeManifest.items&&activeManifest.items.forEach(i=>map[i.itemNum]=i);return map;},[activeManifest]);
   const stock=useMemo(()=>{const s={};if(!activeManifest||!activeManifest.items)return s;activeManifest.items.forEach(i=>{s[i.itemNum]=received[i.itemNum]||0;});salesLog.forEach(t=>{const k=t.item_num||t.itemNum;if(s[k]!==undefined)s[k]=Math.max(0,s[k]-1);});return s;},[activeManifest,received,salesLog]);
@@ -813,7 +816,86 @@ function App(){
 
   const goHome=()=>{stopCam();setCart([]);setCheckoutOpen(false);if(evsRef.current)evsRef.current.close();setPage('home');setActiveId(null);loadManifests(sessionId);};
   const goPos=()=>{setAppMode('pos');setPage('pos');setLastResult(null);setTimeout(()=>manualRef.current&&manualRef.current.focus(),200);};
-  const goRecv=()=>{stopCam();setAppMode('receiving');setPage('recv');setLastResult(null);};
+  
+  useEffect(()=>{
+    if(!(page==='recv'||page==='pos'))return;
+    if(upcPending||pendingSale)return;
+    if(typeof checkoutOpen!=='undefined' && checkoutOpen)return;
+
+    const focusScanner=()=>{
+      try{
+        if(manualRef.current && document.activeElement !== manualRef.current){
+          manualRef.current.focus();
+        }
+      }catch{}
+    };
+
+    focusScanner();
+
+    const focusTimer=setInterval(focusScanner,800);
+
+    const handleGlobalScan=e=>{
+      if(!(page==='recv'||page==='pos'))return;
+      if(upcPending||pendingSale)return;
+      if(typeof checkoutOpen!=='undefined' && checkoutOpen)return;
+
+      const active=document.activeElement;
+      const isTypingField=active && (
+        active.tagName==='INPUT' ||
+        active.tagName==='TEXTAREA' ||
+        active.isContentEditable
+      );
+
+      // Si estás escribiendo en otro campo, no interrumpimos.
+      // Si el campo activo es el scanner manual, dejamos que el formulario normal trabaje.
+      if(isTypingField){
+        if(active===manualRef.current)return;
+        return;
+      }
+
+      if(e.key==='Enter'){
+        const code=eyoyoGlobalBufferRef.current.trim();
+        eyoyoGlobalBufferRef.current='';
+
+        if(code.length>=3){
+          e.preventDefault();
+
+          if(mMap[code]){
+            processCode(code);
+          }else if(upcMap[code]){
+            processCode(upcMap[code]);
+          }else{
+            setUpcPending(code);
+            stopCam();
+            setTimeout(()=>upcRef.current&&upcRef.current.focus(),100);
+          }
+
+          setTimeout(()=>manualRef.current&&manualRef.current.focus(),200);
+        }
+
+        return;
+      }
+
+      if(e.key && e.key.length===1){
+        eyoyoGlobalBufferRef.current += e.key;
+
+        clearTimeout(eyoyoGlobalTimerRef.current);
+        eyoyoGlobalTimerRef.current=setTimeout(()=>{
+          eyoyoGlobalBufferRef.current='';
+        },300);
+      }
+    };
+
+    document.addEventListener('keydown',handleGlobalScan,true);
+
+    return()=>{
+      clearInterval(focusTimer);
+      clearTimeout(eyoyoGlobalTimerRef.current);
+      document.removeEventListener('keydown',handleGlobalScan,true);
+    };
+  },[page,activeManifest,upcPending,pendingSale,mMap,upcMap,processCode]);
+
+const goRecv=()=>{stopCam();setAppMode('receiving');setPage('recv');setLastResult(null);};
 
   const deleteActiveManifest=async()=>{
     if(!activeManifest||!activeId||!sessionId)return;
