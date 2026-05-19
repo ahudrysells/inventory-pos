@@ -243,180 +243,7 @@ function App(){
 },[handleScannedBarcode]);
 
   const confirmUpc=()=>{const n=upcInput.trim();if(!n||!upcPending)return;const b=upcPending;setUpcMap(p=>Object.assign({},p,{[b]:n}));api.post('/api/barcode',{session_id:sessionId,barcode:b,item_num:n}).catch(()=>setSyncDot('err'));processCode(n,b);setUpcPending(null);setUpcInput('');setTimeout(startCam,300);};
-  
-
-
-  useEffect(()=>{
-    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
-
-    const cleanup=()=>{
-      const old=document.getElementById('pos-inline-ios-keypad');
-      if(old)old.remove();
-    };
-
-    cleanup();
-
-    if(!isIOS)return;
-    if(!upcPending)return;
-
-    const openInlineKeypad=()=>{
-      cleanup();
-
-      if(!upcRef.current)return;
-
-      let keypadValue=String(upcInput||'');
-
-      const input=upcRef.current;
-      const parent=input.parentElement;
-
-      const wrap=document.createElement('div');
-      wrap.id='pos-inline-ios-keypad';
-      wrap.style.marginTop='10px';
-      wrap.style.background=C.card;
-      wrap.style.border='1px solid '+C.accent;
-      wrap.style.borderRadius='12px';
-      wrap.style.padding='10px';
-      wrap.style.width='100%';
-      wrap.style.boxSizing='border-box';
-      wrap.style.fontFamily='monospace';
-
-      const top=document.createElement('div');
-      top.style.display='flex';
-      top.style.justifyContent='space-between';
-      top.style.alignItems='center';
-      top.style.marginBottom='8px';
-
-      const title=document.createElement('div');
-      title.textContent='Teclado numérico';
-      title.style.color=C.accent;
-      title.style.fontSize='11px';
-      title.style.fontWeight='800';
-      title.style.letterSpacing='1px';
-      title.style.textTransform='uppercase';
-
-      const close=document.createElement('button');
-      close.textContent='×';
-      close.style.background=C.red+'22';
-      close.style.border='1px solid '+C.red;
-      close.style.color=C.red;
-      close.style.borderRadius='999px';
-      close.style.width='26px';
-      close.style.height='26px';
-      close.style.fontWeight='900';
-      close.style.cursor='pointer';
-      close.onclick=cleanup;
-
-      top.appendChild(title);
-      top.appendChild(close);
-      wrap.appendChild(top);
-
-      const syncInput=()=>{
-        setUpcInput(keypadValue);
-        try{
-          input.value=keypadValue;
-        }catch{}
-      };
-
-      const submit=()=>{
-        const n=keypadValue.trim();
-        const barcode=(upcPending||'').toString().trim();
-
-        if(!n||!barcode)return;
-
-        if(!mMap[n]){
-          alert('Ese Item # no existe en este manifiesto. Verifica el número.');
-          return;
-        }
-
-        const newMap=Object.assign({},upcMap,{[barcode]:n});
-
-        setUpcMap(newMap);
-        LS.set('pos_upc_map',newMap);
-
-        setUpcPending(null);
-        setUpcInput('');
-
-        cleanup();
-        processCode(n);
-
-        setTimeout(()=>{
-          manualRef.current&&manualRef.current.focus();
-        },150);
-      };
-
-      const makeBtn=(txt,fn,bg,color)=>{
-        const b=document.createElement('button');
-        b.textContent=txt;
-        b.style.background=bg||C.panel;
-        b.style.color=color||C.text;
-        b.style.border='1px solid '+C.border;
-        b.style.borderRadius='10px';
-        b.style.padding='12px 8px';
-        b.style.fontSize='17px';
-        b.style.fontWeight='800';
-        b.style.fontFamily='monospace';
-        b.style.cursor='pointer';
-        b.onclick=fn;
-        return b;
-      };
-
-      const grid=document.createElement('div');
-      grid.style.display='grid';
-      grid.style.gridTemplateColumns='1fr 1fr 1fr';
-      grid.style.gap='7px';
-
-      ['1','2','3','4','5','6','7','8','9'].forEach(n=>{
-        grid.appendChild(makeBtn(n,()=>{
-          keypadValue+=n;
-          syncInput();
-        }));
-      });
-
-      grid.appendChild(makeBtn('⌫',()=>{
-        keypadValue=keypadValue.slice(0,-1);
-        syncInput();
-      },C.red+'22',C.red));
-
-      grid.appendChild(makeBtn('0',()=>{
-        keypadValue+='0';
-        syncInput();
-      }));
-
-      grid.appendChild(makeBtn('✓',submit,C.green,C.bg));
-
-      wrap.appendChild(grid);
-
-      parent.insertBefore(wrap,input.nextSibling);
-    };
-
-    const attach=()=>{
-      if(!upcRef.current)return;
-
-      upcRef.current.setAttribute('inputmode','numeric');
-      upcRef.current.setAttribute('pattern','[0-9]*');
-      upcRef.current.setAttribute('autocomplete','off');
-
-      upcRef.current.addEventListener('click',openInlineKeypad);
-      upcRef.current.addEventListener('touchstart',openInlineKeypad);
-    };
-
-    setTimeout(attach,100);
-
-    return()=>{
-      cleanup();
-
-      try{
-        if(upcRef.current){
-          upcRef.current.removeEventListener('click',openInlineKeypad);
-          upcRef.current.removeEventListener('touchstart',openInlineKeypad);
-        }
-      }catch{}
-    };
-  },[upcPending,upcInput,upcMap,mMap,processCode]);
-
-
-  useEffect(()=>{
+useEffect(()=>{
     const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent) ||
       (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
 
@@ -574,6 +401,163 @@ function App(){
       removeOld();
     };
   },[upcPending,upcMap,mMap,processCode]);
+
+
+  useEffect(()=>{
+    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+
+    const removeKeypads=()=>{
+      [
+        'pos-ios-item-keypad-v2',
+        'pos-inline-ios-keypad',
+        'pos-upc-keypad',
+        'pos-upc-keypad-toggle'
+      ].forEach(id=>{
+        document.querySelectorAll('#'+id).forEach(el=>el.remove());
+      });
+    };
+
+    removeKeypads();
+
+    if(!isIOS)return;
+    if(!upcPending)return;
+
+    let mounted=true;
+    let created=false;
+    let tries=0;
+
+    const createKeypad=()=>{
+      if(!mounted || created)return;
+
+      tries++;
+
+      if(!upcRef.current || !upcRef.current.parentElement){
+        if(tries<30)setTimeout(createKeypad,100);
+        return;
+      }
+
+      created=true;
+      removeKeypads();
+
+      const input=upcRef.current;
+      const parent=input.parentElement;
+      let keypadValue=String(upcInput||'');
+
+      const wrap=document.createElement('div');
+      wrap.id='pos-ios-item-keypad-v2';
+      wrap.style.marginTop='10px';
+      wrap.style.background=C.card;
+      wrap.style.border='1px solid '+C.accent;
+      wrap.style.borderRadius='12px';
+      wrap.style.padding='10px';
+      wrap.style.width='100%';
+      wrap.style.boxSizing='border-box';
+      wrap.style.fontFamily='monospace';
+
+      const title=document.createElement('div');
+      title.textContent='Teclado numérico iPhone';
+      title.style.color=C.accent;
+      title.style.fontSize='11px';
+      title.style.fontWeight='800';
+      title.style.textAlign='center';
+      title.style.letterSpacing='1px';
+      title.style.textTransform='uppercase';
+      title.style.marginBottom='8px';
+      wrap.appendChild(title);
+
+      const syncInput=()=>{
+        setUpcInput(keypadValue);
+        try{ input.value=keypadValue; }catch{}
+      };
+
+      const submit=()=>{
+        const n=keypadValue.trim();
+        const barcode=(upcPending||'').toString().trim();
+
+        if(!n||!barcode)return;
+
+        if(!mMap[n]){
+          alert('Ese Item # no existe en este manifiesto. Verifica el número.');
+          return;
+        }
+
+        const newMap=Object.assign({},upcMap,{[barcode]:n});
+        setUpcMap(newMap);
+        LS.set('pos_upc_map',newMap);
+
+        setUpcPending(null);
+        setUpcInput('');
+
+        removeKeypads();
+        processCode(n);
+
+        setTimeout(()=>{
+          manualRef.current&&manualRef.current.focus();
+        },150);
+      };
+
+      const makeBtn=(txt,fn,bg,color)=>{
+        const b=document.createElement('button');
+        b.type='button';
+        b.textContent=txt;
+        b.style.background=bg||C.panel;
+        b.style.color=color||C.text;
+        b.style.border='1px solid '+C.border;
+        b.style.borderRadius='10px';
+        b.style.padding='12px 8px';
+        b.style.fontSize='17px';
+        b.style.fontWeight='800';
+        b.style.fontFamily='monospace';
+        b.style.cursor='pointer';
+        b.onclick=fn;
+        return b;
+      };
+
+      const grid=document.createElement('div');
+      grid.style.display='grid';
+      grid.style.gridTemplateColumns='1fr 1fr 1fr';
+      grid.style.gap='7px';
+
+      ['1','2','3','4','5','6','7','8','9'].forEach(n=>{
+        grid.appendChild(makeBtn(n,()=>{
+          keypadValue+=n;
+          syncInput();
+        }));
+      });
+
+      grid.appendChild(makeBtn('⌫',()=>{
+        keypadValue=keypadValue.slice(0,-1);
+        syncInput();
+      },C.red+'22',C.red));
+
+      grid.appendChild(makeBtn('0',()=>{
+        keypadValue+='0';
+        syncInput();
+      }));
+
+      grid.appendChild(makeBtn('✓',submit,C.green,C.bg));
+
+      wrap.appendChild(grid);
+
+      const note=document.createElement('div');
+      note.textContent='Este teclado aparece solo porque el Eyoyo bloquea el teclado del iPhone.';
+      note.style.color=C.muted;
+      note.style.fontSize='9px';
+      note.style.textAlign='center';
+      note.style.marginTop='8px';
+      wrap.appendChild(note);
+
+      parent.insertBefore(wrap,input.nextSibling);
+    };
+
+    setTimeout(createKeypad,180);
+
+    return()=>{
+      mounted=false;
+      removeKeypads();
+    };
+  },[upcPending]);
 
 const onManual=e=>{
   e&&e.preventDefault();
