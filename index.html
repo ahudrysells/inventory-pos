@@ -29,6 +29,30 @@
   }
 }
 
+
+/* Small centered barcode correction button */
+#pos-correct-barcode-button {
+  top: auto !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: 64px !important;
+  transform: translateX(-50%) !important;
+  padding: 7px 10px !important;
+  font-size: 10px !important;
+  border-radius: 999px !important;
+  opacity: 0.88 !important;
+  max-width: 130px !important;
+  white-space: nowrap !important;
+}
+
+@media (max-width: 700px) {
+  #pos-correct-barcode-button {
+    bottom: 62px !important;
+    font-size: 10px !important;
+    padding: 7px 10px !important;
+  }
+}
+
 </style>
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -1246,7 +1270,7 @@ const goRecv=()=>{stopCam();setAppMode('receiving');setPage('recv');setLastResul
 
     const btn=document.createElement('button');
     btn.id='pos-correct-barcode-button';
-    btn.textContent='🔁 Corregir barcode';
+    btn.textContent='🔁 Barcode';
     btn.style.position='fixed';
     btn.style.left='12px';
     btn.style.top='86px';
