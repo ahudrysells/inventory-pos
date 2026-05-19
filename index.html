@@ -245,16 +245,14 @@ function App(){
   const confirmUpc=()=>{const n=upcInput.trim();if(!n||!upcPending)return;const b=upcPending;setUpcMap(p=>Object.assign({},p,{[b]:n}));api.post('/api/barcode',{session_id:sessionId,barcode:b,item_num:n}).catch(()=>setSyncDot('err'));processCode(n,b);setUpcPending(null);setUpcInput('');setTimeout(startCam,300);};
   
 
+
   useEffect(()=>{
     const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent) ||
       (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
 
     const cleanup=()=>{
-      const oldBtn=document.getElementById('pos-upc-keypad-toggle');
-      if(oldBtn)oldBtn.remove();
-
-      const oldPad=document.getElementById('pos-upc-keypad');
-      if(oldPad)oldPad.remove();
+      const old=document.getElementById('pos-inline-ios-keypad');
+      if(old)old.remove();
     };
 
     cleanup();
@@ -262,26 +260,25 @@ function App(){
     if(!isIOS)return;
     if(!upcPending)return;
 
-    const makeKeypad=()=>{
-      const existing=document.getElementById('pos-upc-keypad');
-      if(existing){
-        existing.remove();
-        return;
-      }
+    const openInlineKeypad=()=>{
+      cleanup();
+
+      if(!upcRef.current)return;
+
+      let keypadValue=String(upcInput||'');
+
+      const input=upcRef.current;
+      const parent=input.parentElement;
 
       const wrap=document.createElement('div');
-      wrap.id='pos-upc-keypad';
-      wrap.style.position='fixed';
-      wrap.style.left='50%';
-      wrap.style.bottom='18px';
-      wrap.style.transform='translateX(-50%)';
-      wrap.style.zIndex='100001';
-      wrap.style.background=C.panel;
+      wrap.id='pos-inline-ios-keypad';
+      wrap.style.marginTop='10px';
+      wrap.style.background=C.card;
       wrap.style.border='1px solid '+C.accent;
-      wrap.style.borderRadius='14px';
+      wrap.style.borderRadius='12px';
       wrap.style.padding='10px';
-      wrap.style.width='min(300px, calc(100vw - 30px))';
-      wrap.style.boxShadow='0 12px 35px rgba(0,0,0,.55)';
+      wrap.style.width='100%';
+      wrap.style.boxSizing='border-box';
       wrap.style.fontFamily='monospace';
 
       const top=document.createElement('div');
@@ -291,11 +288,11 @@ function App(){
       top.style.marginBottom='8px';
 
       const title=document.createElement('div');
-      title.textContent='Item #';
+      title.textContent='Teclado numérico';
       title.style.color=C.accent;
+      title.style.fontSize='11px';
       title.style.fontWeight='800';
-      title.style.fontSize='12px';
-      title.style.letterSpacing='2px';
+      title.style.letterSpacing='1px';
       title.style.textTransform='uppercase';
 
       const close=document.createElement('button');
@@ -304,204 +301,54 @@ function App(){
       close.style.border='1px solid '+C.red;
       close.style.color=C.red;
       close.style.borderRadius='999px';
-      close.style.width='28px';
-      close.style.height='28px';
+      close.style.width='26px';
+      close.style.height='26px';
       close.style.fontWeight='900';
       close.style.cursor='pointer';
-      close.onclick=()=>wrap.remove();
+      close.onclick=cleanup;
 
       top.appendChild(title);
       top.appendChild(close);
       wrap.appendChild(top);
 
-      const makeBtn=(txt,fn,bg,color)=>{
-        const b=document.createElement('button');
-        b.textContent=txt;
-        b.style.background=bg||C.card;
-        b.style.color=color||C.text;
-        b.style.border='1px solid '+C.border;
-        b.style.borderRadius='10px';
-        b.style.padding='12px 8px';
-        b.style.fontSize='17px';
-        b.style.fontWeight='800';
-        b.style.fontFamily='monospace';
-        b.style.cursor='pointer';
-        b.onclick=fn;
-        return b;
+      const syncInput=()=>{
+        setUpcInput(keypadValue);
+        try{
+          input.value=keypadValue;
+        }catch{}
       };
 
-      const grid=document.createElement('div');
-      grid.style.display='grid';
-      grid.style.gridTemplateColumns='1fr 1fr 1fr';
-      grid.style.gap='7px';
+      const submit=()=>{
+        const n=keypadValue.trim();
+        const barcode=(upcPending||'').toString().trim();
 
-      ['1','2','3','4','5','6','7','8','9'].forEach(n=>{
-        grid.appendChild(makeBtn(n,()=>setUpcInput(v=>String(v||'')+n)));
-      });
+        if(!n||!barcode)return;
 
-      grid.appendChild(makeBtn('⌫',()=>setUpcInput(v=>String(v||'').slice(0,-1)),C.red+'22',C.red));
-      grid.appendChild(makeBtn('0',()=>setUpcInput(v=>String(v||'')+'0')));
-      grid.appendChild(makeBtn('✓',()=>confirmUpc(),C.green,C.bg));
-
-      wrap.appendChild(grid);
-
-      document.body.appendChild(wrap);
-    };
-
-    const btn=document.createElement('button');
-    btn.id='pos-upc-keypad-toggle';
-    btn.textContent='⌨️ Teclado';
-    btn.style.position='fixed';
-    btn.style.left='50%';
-    btn.style.transform='translateX(-50%)';
-    btn.style.zIndex='100001';
-    btn.style.background=C.accent+'22';
-    btn.style.border='1px solid '+C.accent;
-    btn.style.color=C.accent;
-    btn.style.borderRadius='999px';
-    btn.style.padding='7px 12px';
-    btn.style.fontFamily='monospace';
-    btn.style.fontWeight='800';
-    btn.style.fontSize='11px';
-    btn.style.cursor='pointer';
-    btn.style.boxShadow='0 8px 20px rgba(0,0,0,.35)';
-    btn.onclick=makeKeypad;
-
-    const placeButton=()=>{
-      const input=[...document.querySelectorAll('input')]
-        .find(i=>i.placeholder==='Ej: 1897988');
-
-      if(input){
-        const r=input.getBoundingClientRect();
-        btn.style.top=(r.bottom+8)+'px';
-        btn.style.bottom='auto';
-      }else{
-        btn.style.bottom='82px';
-        btn.style.top='auto';
-      }
-    };
-
-    document.body.appendChild(btn);
-    setTimeout(placeButton,80);
-    window.addEventListener('resize',placeButton);
-
-    return()=>{
-      window.removeEventListener('resize',placeButton);
-      cleanup();
-    };
-  },[upcPending,confirmUpc]);
-
-
-  useEffect(()=>{
-    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
-
-    const cleanup=()=>{
-      const oldBtn=document.getElementById('pos-upc-keypad-toggle');
-      if(oldBtn)oldBtn.remove();
-
-      const oldPad=document.getElementById('pos-upc-keypad');
-      if(oldPad)oldPad.remove();
-    };
-
-    cleanup();
-
-    if(!isIOS)return;
-    if(!upcPending)return;
-
-    let keypadValue=String(upcInput||'');
-
-    const syncInput=()=>{
-      setUpcInput(keypadValue);
-      try{
-        if(upcRef.current){
-          upcRef.current.value=keypadValue;
+        if(!mMap[n]){
+          alert('Ese Item # no existe en este manifiesto. Verifica el número.');
+          return;
         }
-      }catch{}
-    };
 
-    const submitKeypad=()=>{
-      const n=keypadValue.trim();
-      const barcode=(upcPending||'').toString().trim();
+        const newMap=Object.assign({},upcMap,{[barcode]:n});
 
-      if(!n||!barcode)return;
+        setUpcMap(newMap);
+        LS.set('pos_upc_map',newMap);
 
-      if(!mMap[n]){
-        alert('Ese Item # no existe en este manifiesto. Verifica el número.');
-        return;
-      }
+        setUpcPending(null);
+        setUpcInput('');
 
-      const newMap=Object.assign({},upcMap,{[barcode]:n});
+        cleanup();
+        processCode(n);
 
-      setUpcMap(newMap);
-      LS.set('pos_upc_map',newMap);
-
-      setUpcPending(null);
-      setUpcInput('');
-
-      processCode(n);
-
-      setTimeout(()=>{
-        manualRef.current&&manualRef.current.focus();
-      },150);
-    };
-
-    const openKeypad=()=>{
-      const existing=document.getElementById('pos-upc-keypad');
-      if(existing){
-        existing.remove();
-        return;
-      }
-
-      const wrap=document.createElement('div');
-      wrap.id='pos-upc-keypad';
-      wrap.style.position='fixed';
-      wrap.style.left='50%';
-      wrap.style.bottom='18px';
-      wrap.style.transform='translateX(-50%)';
-      wrap.style.zIndex='100001';
-      wrap.style.background=C.panel;
-      wrap.style.border='1px solid '+C.accent;
-      wrap.style.borderRadius='14px';
-      wrap.style.padding='10px';
-      wrap.style.width='min(300px, calc(100vw - 30px))';
-      wrap.style.boxShadow='0 12px 35px rgba(0,0,0,.55)';
-      wrap.style.fontFamily='monospace';
-
-      const top=document.createElement('div');
-      top.style.display='flex';
-      top.style.justifyContent='space-between';
-      top.style.alignItems='center';
-      top.style.marginBottom='8px';
-
-      const title=document.createElement('div');
-      title.textContent='Item #';
-      title.style.color=C.accent;
-      title.style.fontWeight='800';
-      title.style.fontSize='12px';
-      title.style.letterSpacing='2px';
-      title.style.textTransform='uppercase';
-
-      const close=document.createElement('button');
-      close.textContent='×';
-      close.style.background=C.red+'22';
-      close.style.border='1px solid '+C.red;
-      close.style.color=C.red;
-      close.style.borderRadius='999px';
-      close.style.width='28px';
-      close.style.height='28px';
-      close.style.fontWeight='900';
-      close.style.cursor='pointer';
-      close.onclick=()=>wrap.remove();
-
-      top.appendChild(title);
-      top.appendChild(close);
-      wrap.appendChild(top);
+        setTimeout(()=>{
+          manualRef.current&&manualRef.current.focus();
+        },150);
+      };
 
       const makeBtn=(txt,fn,bg,color)=>{
         const b=document.createElement('button');
         b.textContent=txt;
-        b.style.background=bg||C.card;
+        b.style.background=bg||C.panel;
         b.style.color=color||C.text;
         b.style.border='1px solid '+C.border;
         b.style.borderRadius='10px';
@@ -536,56 +383,37 @@ function App(){
         syncInput();
       }));
 
-      grid.appendChild(makeBtn('✓',submitKeypad,C.green,C.bg));
+      grid.appendChild(makeBtn('✓',submit,C.green,C.bg));
 
       wrap.appendChild(grid);
-      document.body.appendChild(wrap);
+
+      parent.insertBefore(wrap,input.nextSibling);
     };
 
-    const btn=document.createElement('button');
-    btn.id='pos-upc-keypad-toggle';
-    btn.textContent='⌨️ Teclado';
-    btn.style.position='fixed';
-    btn.style.left='50%';
-    btn.style.transform='translateX(-50%)';
-    btn.style.zIndex='100001';
-    btn.style.background=C.accent+'22';
-    btn.style.border='1px solid '+C.accent;
-    btn.style.color=C.accent;
-    btn.style.borderRadius='999px';
-    btn.style.padding='7px 12px';
-    btn.style.fontFamily='monospace';
-    btn.style.fontWeight='800';
-    btn.style.fontSize='11px';
-    btn.style.cursor='pointer';
-    btn.style.boxShadow='0 8px 20px rgba(0,0,0,.35)';
-    btn.onclick=openKeypad;
+    const attach=()=>{
+      if(!upcRef.current)return;
 
-    const placeButton=()=>{
-      try{
-        if(upcRef.current){
-          const r=upcRef.current.getBoundingClientRect();
-          btn.style.top=(r.bottom+8)+'px';
-          btn.style.bottom='auto';
-        }else{
-          btn.style.bottom='82px';
-          btn.style.top='auto';
-        }
-      }catch{
-        btn.style.bottom='82px';
-        btn.style.top='auto';
-      }
+      upcRef.current.setAttribute('inputmode','numeric');
+      upcRef.current.setAttribute('pattern','[0-9]*');
+      upcRef.current.setAttribute('autocomplete','off');
+
+      upcRef.current.addEventListener('click',openInlineKeypad);
+      upcRef.current.addEventListener('touchstart',openInlineKeypad);
     };
 
-    document.body.appendChild(btn);
-    setTimeout(placeButton,80);
-    window.addEventListener('resize',placeButton);
+    setTimeout(attach,100);
 
     return()=>{
-      window.removeEventListener('resize',placeButton);
       cleanup();
+
+      try{
+        if(upcRef.current){
+          upcRef.current.removeEventListener('click',openInlineKeypad);
+          upcRef.current.removeEventListener('touchstart',openInlineKeypad);
+        }
+      }catch{}
     };
-  },[upcPending,upcMap,mMap,processCode]);
+  },[upcPending,upcInput,upcMap,mMap,processCode]);
 
 const onManual=e=>{
   e&&e.preventDefault();
@@ -1755,7 +1583,7 @@ if(!sessionId){
             React.createElement('button',{onClick:()=>setCode(genCode()),style:{flex:1,background:C.dim,border:'none',borderRadius:10,padding:12,color:C.text,fontWeight:700,cursor:'pointer',fontSize:13}},'🎲 Nuevo'),
             React.createElement('button',{onClick:()=>{if(!code.trim())return;const c=code.trim().toUpperCase();LS.set('pos_session',c);setSessionId(c);loadManifests(c);},style:{flex:2,background:C.green,border:'none',borderRadius:10,padding:12,color:C.bg,fontWeight:700,cursor:'pointer',fontSize:14}},'✓ Entrar')))));
   }
-  const UpcDialog=upcPending&&React.createElement('div',{style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,padding:20}},React.createElement('div',{style:{background:C.panel,borderRadius:16,padding:24,maxWidth:360,width:'100%',border:'1px solid '+C.yellow}},React.createElement('div',{style:{color:C.yellow,fontWeight:700,fontSize:13,letterSpacing:1,textTransform:'uppercase',marginBottom:8}},'⚡ Nuevo Barcode'),React.createElement('div',{style:{color:C.muted,fontSize:11,marginBottom:4}},'UPC escaneado:'),React.createElement('div',{style:{color:C.accent,fontFamily:'monospace',fontSize:15,marginBottom:14,background:C.card,padding:'8px 12px',borderRadius:8}},upcPending),React.createElement('div',{style:{color:C.text,fontSize:13,marginBottom:12,lineHeight:1.6}},'Escribe el ',React.createElement('strong',{style:{color:C.yellow}},'Item #'),' de la etiqueta:'),React.createElement('input',{ref:upcRef,type:'tel',value:upcInput,onChange:e=>setUpcInput(e.target.value),onKeyDown:e=>e.key==='Enter'&&confirmUpc(),style:{width:'100%',background:C.card,border:'2px solid '+C.accent,borderRadius:10,padding:14,fontSize:20,fontFamily:'monospace',color:C.text,textAlign:'center',outline:'none',boxSizing:'border-box',marginBottom:14},placeholder:'Ej: 1897988'}),React.createElement('div',{style:{display:'flex',gap:10}},React.createElement('button',{onClick:()=>{setUpcPending(null);setUpcInput('');setTimeout(startCam,200);},style:{flex:1,background:C.dim,border:'none',borderRadius:10,padding:13,color:C.text,fontWeight:700,cursor:'pointer',fontSize:13}},'Cancelar'),React.createElement('button',{onClick:confirmUpc,style:{flex:2,background:C.accent,border:'none',borderRadius:10,padding:13,color:C.bg,fontWeight:700,cursor:'pointer',fontSize:13}},'Confirmar'))));
+  const UpcDialog=upcPending&&React.createElement('div',{style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,padding:20}},React.createElement('div',{style:{background:C.panel,borderRadius:16,padding:24,maxWidth:360,width:'100%',border:'1px solid '+C.yellow}},React.createElement('div',{style:{color:C.yellow,fontWeight:700,fontSize:13,letterSpacing:1,textTransform:'uppercase',marginBottom:8}},'⚡ Nuevo Barcode'),React.createElement('div',{style:{color:C.muted,fontSize:11,marginBottom:4}},'UPC escaneado:'),React.createElement('div',{style:{color:C.accent,fontFamily:'monospace',fontSize:15,marginBottom:14,background:C.card,padding:'8px 12px',borderRadius:8}},upcPending),React.createElement('div',{style:{color:C.text,fontSize:13,marginBottom:12,lineHeight:1.6}},'Escribe el ',React.createElement('strong',{style:{color:C.yellow}},'Item #'),' de la etiqueta:'),React.createElement('input',{ref:upcRef,type:'tel',inputMode:'numeric',pattern:'[0-9]*',value:upcInput,onChange:e=>setUpcInput(e.target.value),onKeyDown:e=>e.key==='Enter'&&confirmUpc(),style:{width:'100%',background:C.card,border:'2px solid '+C.accent,borderRadius:10,padding:14,fontSize:20,fontFamily:'monospace',color:C.text,textAlign:'center',outline:'none',boxSizing:'border-box',marginBottom:14},placeholder:'Ej: 1897988'}),React.createElement('div',{style:{display:'flex',gap:10}},React.createElement('button',{onClick:()=>{setUpcPending(null);setUpcInput('');setTimeout(startCam,200);},style:{flex:1,background:C.dim,border:'none',borderRadius:10,padding:13,color:C.text,fontWeight:700,cursor:'pointer',fontSize:13}},'Cancelar'),React.createElement('button',{onClick:confirmUpc,style:{flex:2,background:C.accent,border:'none',borderRadius:10,padding:13,color:C.bg,fontWeight:700,cursor:'pointer',fontSize:13}},'Confirmar'))));
   const SaleDialog=pendingSale&&React.createElement('div',{style:{position:'fixed',inset:0,background:'rgba(0,0,0,.92)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,padding:20}},React.createElement('div',{style:{background:C.panel,borderRadius:16,padding:24,maxWidth:380,width:'100%',border:'1px solid '+C.green}},React.createElement('div',{style:{marginBottom:16}},React.createElement('div',{style:{color:C.muted,fontSize:10,letterSpacing:2,textTransform:'uppercase',marginBottom:4}},'Artículo a Vender'),React.createElement('div',{style:{color:C.text,fontWeight:700,fontSize:15,marginBottom:2}},pendingSale.item.description),React.createElement('div',{style:{color:C.muted,fontSize:12}},pendingSale.item.brand,' · #',pendingSale.item.itemNum),React.createElement('div',{style:{display:'flex',gap:16,marginTop:8}},React.createElement('div',{style:{color:C.muted,fontSize:11}},'Retail: ',React.createElement('span',{style:{color:C.yellow}},fmt(pendingSale.item.unitRetail))),React.createElement('div',{style:{color:C.muted,fontSize:11}},'Stock: ',React.createElement('span',{style:{color:C.green}},stock[pendingSale.item.itemNum]||0)))),React.createElement('div',{style:{marginBottom:18}},React.createElement('div',{style:{color:C.muted,fontSize:10,letterSpacing:2,textTransform:'uppercase',marginBottom:6}},'Precio de Venta'),React.createElement('div',{style:{display:'flex',alignItems:'center',background:C.card,borderRadius:10,border:'2px solid '+C.green,overflow:'hidden'}},React.createElement('span',{style:{color:C.green,fontWeight:700,fontSize:22,padding:'0 12px'}},'$'),React.createElement('input',{ref:priceRef,type:'number',step:'0.01',min:'0',value:salePrice,onChange:e=>setSalePrice(e.target.value),style:{flex:1,background:'none',border:'none',padding:'14px 12px 14px 0',fontSize:26,fontFamily:'monospace',color:C.green,fontWeight:700,outline:'none',width:'100%'}}))),React.createElement('div',{style:{color:C.muted,fontSize:10,letterSpacing:2,textTransform:'uppercase',marginBottom:10}},'¿Cómo pagó?'),React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:10,marginBottom:14}},PAY.map(p=>React.createElement('button',{key:p.id,onClick:()=>confirmSale(p.id),style:{background:p.color+'18',border:'2px solid '+p.color,borderRadius:12,padding:'16px 20px',color:p.color,fontWeight:700,fontSize:16,cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:14}},React.createElement('span',{style:{fontSize:24}},p.emoji),React.createElement('span',{style:{flex:1}},p.label.split(' ').slice(1).join(' ')),React.createElement('span',{style:{fontSize:20,fontWeight:800}},fmt(parseFloat(salePrice)||0))))),React.createElement('button',{onClick:()=>{setPendingSale(null);setTimeout(()=>manualRef.current&&manualRef.current.focus(),100);},style:{width:'100%',background:C.dim,border:'none',borderRadius:10,padding:13,color:C.muted,fontWeight:700,cursor:'pointer',fontSize:13}},'Cancelar')));
   const ScannerUI=React.createElement('div',null,
     React.createElement('div',{style:{margin:'8px 12px 0',display:'flex',gap:6}},
@@ -1764,7 +1592,7 @@ if(!sessionId){
       Object.keys(upcMap).length>0&&React.createElement('div',{style:{background:C.card,border:'1px solid '+C.border,borderRadius:8,padding:'8px 10px',color:C.muted,fontSize:10,display:'flex',alignItems:'center',gap:4}},React.createElement('span',{style:{color:C.accent}},'◉'),Object.keys(upcMap).length),
       syncDot&&React.createElement('div',{style:{background:C.card,border:'1px solid '+(syncDot==='ok'?C.green:C.red),borderRadius:8,padding:'8px 10px',display:'flex',alignItems:'center'}},React.createElement('span',{style:{width:8,height:8,borderRadius:'50%',background:syncDot==='ok'?C.green:C.red,display:'inline-block'}}))),
     scanMode==='camera'&&hasBD&&React.createElement('div',{style:{margin:'8px 12px 0'}},React.createElement('div',{style:{position:'relative',background:'#000',borderRadius:12,overflow:'hidden',height:180}},React.createElement('video',{ref:videoRef,style:{width:'100%',height:'100%',objectFit:'cover'},muted:true,playsInline:true}),!cameraActive&&React.createElement('div',{style:{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10}},React.createElement('button',{onClick:startCam,style:{background:C.accent,color:C.bg,border:'none',borderRadius:10,padding:'12px 24px',fontWeight:700,fontSize:14,cursor:'pointer'}},'📷 Activar Cámara'),camError&&React.createElement('div',{style:{color:C.red,fontSize:12}},camError)),cameraActive&&React.createElement('div',null,React.createElement('div',{style:{position:'absolute',inset:0,border:'2px solid '+C.accent,borderRadius:12,pointerEvents:'none',opacity:.5}}),React.createElement('button',{onClick:stopCam,style:{position:'absolute',top:8,right:8,background:'rgba(255,61,87,.8)',border:'none',borderRadius:6,padding:'4px 10px',color:'#fff',fontSize:11,cursor:'pointer'}},'Detener'),React.createElement('div',{style:{position:'absolute',bottom:8,left:0,right:0,textAlign:'center'}},React.createElement('span',{style:{background:'rgba(0,0,0,.6)',color:C.accent,fontSize:11,padding:'4px 10px',borderRadius:20}},'Apunta al barcode...'))))),
-    React.createElement('div',{style:{margin:'8px 12px 0'}},React.createElement('form',{onSubmit:onManual,style:{display:'flex',gap:8}},React.createElement('input',{ref:manualRef,type:'tel',value:manualInput,onChange:e=>setManualInput(e.target.value),style:{flex:1,background:C.card,border:'1px solid '+C.border,borderRadius:10,padding:'12px 14px',fontSize:18,fontFamily:'monospace',color:C.text,outline:'none'},placeholder:'Ingresa Item #',autoFocus:!isIOSDevice()&&scanMode==='item',onTouchStart:()=>{try{manualRef.current&&manualRef.current.focus();}catch{}},onClick:()=>{try{manualRef.current&&manualRef.current.focus();}catch{}}}),React.createElement('button',{type:'submit',style:{background:appMode==='pos'?C.green:C.accent,color:C.bg,border:'none',borderRadius:10,padding:'12px 18px',fontWeight:700,fontSize:18,cursor:'pointer'}},'✓')),React.createElement('div',{style:{color:C.muted,fontSize:10,marginTop:5,textAlign:'center'}},'Item # de la etiqueta · Compatible con escáner Bluetooth')));
+    React.createElement('div',{style:{margin:'8px 12px 0'}},React.createElement('form',{onSubmit:onManual,style:{display:'flex',gap:8}},React.createElement('input',{ref:manualRef,type:'tel',inputMode:'numeric',pattern:'[0-9]*',value:manualInput,onChange:e=>setManualInput(e.target.value),style:{flex:1,background:C.card,border:'1px solid '+C.border,borderRadius:10,padding:'12px 14px',fontSize:18,fontFamily:'monospace',color:C.text,outline:'none'},placeholder:'Ingresa Item #',autoFocus:!isIOSDevice()&&scanMode==='item',onTouchStart:()=>{try{manualRef.current&&manualRef.current.focus();}catch{}},onClick:()=>{try{manualRef.current&&manualRef.current.focus();}catch{}}}),React.createElement('button',{type:'submit',style:{background:appMode==='pos'?C.green:C.accent,color:C.bg,border:'none',borderRadius:10,padding:'12px 18px',fontWeight:700,fontSize:18,cursor:'pointer'}},'✓')),React.createElement('div',{style:{color:C.muted,fontSize:10,marginTop:5,textAlign:'center'}},'Item # de la etiqueta · Compatible con escáner Bluetooth')));
   const ResultCard=lastResult?React.createElement('div',{style:{margin:'8px 12px 0'}},React.createElement('div',{style:{background:lastResult.status==='found'||lastResult.status==='sold'?'#0a1f0e':lastResult.status==='nostock'?'#1f1200':'#1f0a0e',border:'1px solid '+(lastResult.status==='found'||lastResult.status==='sold'?C.green:lastResult.status==='nostock'?C.orange:C.red),borderRadius:12,padding:'12px 14px'}},lastResult.status==='found'&&React.createElement('div',{style:{display:'flex',gap:12,alignItems:'flex-start'}},React.createElement('span',{style:{fontSize:26}},'✅'),React.createElement('div',{style:{flex:1,minWidth:0}},React.createElement('div',{style:{fontWeight:700,fontSize:13,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},lastResult.description),React.createElement('div',{style:{color:C.muted,fontSize:11}},lastResult.brand,' · #',lastResult.itemNum,' · ',fmt(lastResult.unitRetail)),React.createElement('div',{style:{marginTop:6,display:'flex',gap:16}},React.createElement('div',null,React.createElement('span',{style:{color:C.muted,fontSize:10}},'REC: '),React.createElement('span',{style:{color:C.green,fontWeight:700,fontSize:16}},received[lastResult.itemNum]||0)),React.createElement('div',null,React.createElement('span',{style:{color:C.muted,fontSize:10}},'ESP: '),React.createElement('span',{style:{color:C.text,fontWeight:700,fontSize:16}},lastResult.qty))))),lastResult.status==='sold'&&React.createElement('div',{style:{display:'flex',gap:12,alignItems:'flex-start'}},React.createElement('span',{style:{fontSize:26}},'💰'),React.createElement('div',{style:{flex:1,minWidth:0}},React.createElement('div',{style:{fontWeight:700,fontSize:13,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},lastResult.description),React.createElement('div',{style:{color:C.muted,fontSize:11}},lastResult.brand),React.createElement('div',{style:{marginTop:6,display:'flex',gap:14,alignItems:'center'}},React.createElement('div',{style:{color:C.green,fontSize:22,fontWeight:700}},fmt(lastResult.price)),React.createElement('div',{style:{color:PAY.find(p=>p.id===lastResult.payMethod)&&PAY.find(p=>p.id===lastResult.payMethod).color,fontSize:13,fontWeight:700}},PAY.find(p=>p.id===lastResult.payMethod)&&PAY.find(p=>p.id===lastResult.payMethod).label),React.createElement('div',{style:{color:C.muted,fontSize:11}},'Stock: ',stock[lastResult.itemNum]||0)))),lastResult.status==='nostock'&&React.createElement('div',{style:{display:'flex',gap:12,alignItems:'center'}},React.createElement('span',{style:{fontSize:26}},'📭'),React.createElement('div',null,React.createElement('div',{style:{color:C.orange,fontWeight:700,fontSize:13}},'Sin stock — ',lastResult.description))),lastResult.status==='miss'&&React.createElement('div',{style:{display:'flex',gap:12,alignItems:'center'}},React.createElement('span',{style:{fontSize:26}},'❌'),React.createElement('div',null,React.createElement('div',{style:{color:C.red,fontWeight:700,fontSize:13}},'No en manifiesto'),React.createElement('div',{style:{color:C.muted,fontSize:12}},'#',lastResult.itemNum))))):React.createElement('div',{style:{margin:'8px 12px 0'}},React.createElement('div',{style:{background:C.card,border:'1px dashed '+C.dim,borderRadius:12,padding:14,textAlign:'center',color:C.muted,fontSize:12,letterSpacing:1}},appMode==='receiving'?'Escanea o ingresa un Item # para comenzar':'Escanea o ingresa un Item # para registrar venta'));
   if(page==='home'){const totalSalesAll=manifests.reduce((s,m)=>{const sl=LS.get('pos_sales_'+m.id,[]);return s+sl.reduce((a,t)=>a+Number(t.price),0);},0);return React.createElement('div',{style:{minHeight:'100vh',background:C.bg,color:C.text,display:'flex',flexDirection:'column'}},React.createElement('div',{style:{background:C.panel,padding:'14px 16px',borderBottom:'1px solid '+C.border}},React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},React.createElement('div',null,React.createElement('h1',{style:{color:C.accent,fontSize:16,fontWeight:700,letterSpacing:2,textTransform:'uppercase'}},'📦 Klou POS'),React.createElement('div',{style:{color:C.green,fontSize:11,marginTop:2}},'🔗 Sesión: ',React.createElement('strong',null,sessionId))),React.createElement('button',{onClick:()=>setPage('settings'),style:{background:C.card,border:'1px solid '+C.border,borderRadius:8,padding:'8px 12px',color:C.muted,fontSize:16,cursor:'pointer'}},'⚙')),React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},React.createElement('div',{style:{background:C.card,borderRadius:8,padding:'10px 12px',border:'1px solid '+C.border}},React.createElement('div',{style:{color:C.accent,fontSize:20,fontWeight:700}},manifests.length),React.createElement('div',{style:{color:C.muted,fontSize:9,letterSpacing:1,textTransform:'uppercase'}},'Manifiestos')),React.createElement('div',{style:{background:C.card,borderRadius:8,padding:'10px 12px',border:'1px solid '+C.border}},React.createElement('div',{style:{color:C.green,fontSize:20,fontWeight:700}},fmt(totalSalesAll)),React.createElement('div',{style:{color:C.muted,fontSize:9,letterSpacing:1,textTransform:'uppercase'}},'Ventas Totales')))),React.createElement('div',{style:{padding:'12px 12px 0'}},React.createElement('input',{ref:fileRef,type:'file',accept:'.csv',style:{display:'none'},onChange:onFile}),React.createElement('button',{onClick:()=>fileRef.current&&fileRef.current.click(),style:{width:'100%',background:C.accent,color:C.bg,border:'none',borderRadius:12,padding:16,fontWeight:700,fontSize:14,cursor:'pointer',letterSpacing:2,textTransform:'uppercase'}},'+ Subir Nuevo Manifiesto CSV')),React.createElement('div',{style:{padding:'8px 12px 0',display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}},React.createElement('button',{onClick:()=>downloadCsv('sales'),style:{background:C.card,border:'1px solid '+C.green,borderRadius:8,padding:'10px 6px',color:C.green,fontWeight:700,fontSize:10,cursor:'pointer'}},'⬇ Ventas'),React.createElement('button',{onClick:()=>downloadCsv('received'),style:{background:C.card,border:'1px solid '+C.accent,borderRadius:8,padding:'10px 6px',color:C.accent,fontWeight:700,fontSize:10,cursor:'pointer'}},'⬇ Recibido'),React.createElement('button',{onClick:()=>downloadCsv('inventory'),style:{background:C.card,border:'1px solid '+C.yellow,borderRadius:8,padding:'10px 6px',color:C.yellow,fontWeight:700,fontSize:10,cursor:'pointer'}},'⬇ Stock')),React.createElement('div',{style:{flex:1,overflow:'auto',padding:'12px 12px 24px'}},manifests.length===0?React.createElement('div',{style:{textAlign:'center',padding:'40px 20px',color:C.muted}},React.createElement('div',{style:{fontSize:40,marginBottom:12}},'📄'),React.createElement('div',{style:{fontSize:13}},'No hay manifiestos aún')):manifests.map(m=>{const sl=LS.get('pos_sales_'+m.id,[]);const rcv=LS.get('pos_rcv_'+m.id,{});const tr=Object.values(rcv).reduce((s,v)=>s+v,0);const ts=sl.reduce((s,t)=>s+Number(t.price),0);return React.createElement('div',{key:m.id,onClick:()=>{setActiveId(m.id);setAppMode('receiving');setPage('recv');},style:{background:C.card,borderRadius:12,padding:'14px 16px',marginBottom:8,border:'1px solid '+C.border,cursor:'pointer'}},React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}},React.createElement('div',{style:{flex:1,minWidth:0}},React.createElement('div',{style:{fontWeight:700,fontSize:13,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},m.name),React.createElement('div',{style:{color:C.muted,fontSize:10,marginTop:2}},m.uploadedAt,' · ',m.items?m.items.length:0,' SKUs')),React.createElement('div',{style:{color:C.accent,fontSize:18,flexShrink:0,marginLeft:8}},'›')),React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}},[{l:'Recibidas',v:tr,c:C.green},{l:'Vendidas',v:sl.length,c:C.yellow},{l:'Ventas',v:fmt(ts),c:C.green}].map(s=>React.createElement('div',{key:s.l,style:{background:C.panel,borderRadius:7,padding:'6px 8px',textAlign:'center'}},React.createElement('div',{style:{color:s.c,fontSize:13,fontWeight:700}},s.v),React.createElement('div',{style:{color:C.muted,fontSize:9,textTransform:'uppercase'}},s.l)))));})));}
   if(page==='settings'){return React.createElement('div',{style:{minHeight:'100vh',background:C.bg,color:C.text,padding:20}},React.createElement('div',{style:{display:'flex',alignItems:'center',gap:12,marginBottom:24}},React.createElement('button',{onClick:()=>setPage('home'),style:{background:'none',border:'none',color:C.accent,cursor:'pointer',fontSize:22,padding:0}},'←'),React.createElement('span',{style:{fontWeight:700,letterSpacing:2,textTransform:'uppercase',fontSize:13}},'Configuración')),React.createElement('div',{style:{background:C.panel,borderRadius:12,padding:20,border:'1px solid '+C.border,marginBottom:16}},React.createElement('div',{style:{color:C.muted,fontSize:10,letterSpacing:2,textTransform:'uppercase',marginBottom:8}},'Código de Sesión'),React.createElement('div',{style:{color:C.green,fontSize:32,fontWeight:700,letterSpacing:6,textAlign:'center',padding:'16px 0'}},sessionId),React.createElement('div',{style:{color:C.muted,fontSize:12,textAlign:'center'}},'Comparte este código para sync multi-dispositivo')),React.createElement('button',{onClick:()=>{LS.set('pos_session',null);setSessionId(null);},style:{width:'100%',background:'#1a0505',border:'1px solid '+C.red,borderRadius:10,padding:14,color:C.red,fontWeight:700,cursor:'pointer',fontSize:13,letterSpacing:1,textTransform:'uppercase'}},'Cambiar Código de Sesión'));}
