@@ -156,7 +156,49 @@ function App(){
   }
 },[appMode,mMap,stock,cart,activeId,sessionId]);
 
-  const onScan=useCallback(raw=>{raw=raw.toString().trim();const now=Date.now();if(raw===lastCodeRef.current&&now-lastTimeRef.current<1500)return;lastCodeRef.current=raw;lastTimeRef.current=now;if(upcMap[raw])processCode(upcMap[raw],raw);else{setUpcPending(raw);stopCam();setTimeout(()=>upcRef.current&&upcRef.current.focus(),100);}},[upcMap,processCode]);
+  const handleScannedBarcode=useCallback(raw=>{
+  raw=raw.toString().trim();
+  if(!raw)return;
+
+  if(upcMap[raw]){
+    const learnedItem=upcMap[raw];
+
+    if(mMap[learnedItem]){
+      processCode(learnedItem);
+      return;
+    }
+
+    alert(
+      'Este barcode estaba asociado al Item # '+learnedItem+
+      ', pero ese Item # no está en este manifiesto. Ahora puedes escribir el Item # correcto para corregirlo.'
+    );
+
+    setUpcPending(raw);
+    setUpcInput('');
+    stopCam();
+    setTimeout(()=>upcRef.current&&upcRef.current.focus(),100);
+    return;
+  }
+
+  setUpcPending(raw);
+  setUpcInput('');
+  stopCam();
+  setTimeout(()=>upcRef.current&&upcRef.current.focus(),100);
+},[upcMap,mMap,processCode]);
+
+  const onScan=useCallback(raw=>{
+  raw=raw.toString().trim();
+
+  const now=Date.now();
+
+  if(raw===lastCodeRef.current&&now-lastTimeRef.current<1500)return;
+
+  lastCodeRef.current=raw;
+  lastTimeRef.current=now;
+
+  handleScannedBarcode(raw);
+},[handleScannedBarcode]);
+
   const confirmUpc=()=>{const n=upcInput.trim();if(!n||!upcPending)return;const b=upcPending;setUpcMap(p=>Object.assign({},p,{[b]:n}));api.post('/api/barcode',{session_id:sessionId,barcode:b,item_num:n}).catch(()=>setSyncDot('err'));processCode(n,b);setUpcPending(null);setUpcInput('');setTimeout(startCam,300);};
   const onManual=e=>{
   e&&e.preventDefault();
@@ -166,16 +208,17 @@ function App(){
 
   setManualInput('');
 
-  // Si el número existe como Item # en el manifiesto, lo procesa directo.
-  // Si no existe, lo trata como barcode del scanner Eyoyo para aprenderlo.
   if(mMap[raw]){
     processCode(raw);
   }else{
-    onScan(raw);
+    handleScannedBarcode(raw);
   }
 
-  manualRef.current&&manualRef.current.focus();
+  setTimeout(()=>{
+    manualRef.current&&manualRef.current.focus();
+  },200);
 };
+
   const confirmSale=async payMethod=>{if(!pendingSale)return;const{item}=pendingSale;const barcode=pendingSale.barcode||'';const price=payMethod==='gift'?0:(parseFloat(salePrice)||0);const now=new Date();const time=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});const sale_date=now.toISOString().slice(0,10);const sale_datetime=now.toISOString();const id=genId();const tx={id,item_num:item.itemNum,itemNum:item.itemNum,barcode,description:item.description,brand:item.brand,price,pay_method:payMethod,payMethod,sale_time:time,time,sale_date,sale_datetime,manifest_id:activeId,created_at:new Date().toISOString()};const newSales=[tx,...salesLog];setSalesLog(newSales);setLastResult(Object.assign({},item,{status:'sold',price,payMethod}));setPendingSale(null);setSalePrice('');pulse('ok');LS.set('pos_sales_'+activeId,newSales);api.post('/api/sale',{id,session_id:sessionId,manifest_id:activeId,item_num:item.itemNum,barcode,description:item.description,brand:item.brand,price,pay_method:payMethod,sale_time:time,sale_date,sale_datetime}).then(()=>{setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}).catch(()=>setSyncDot('err'));setTimeout(()=>manualRef.current&&manualRef.current.focus(),100);};
   const totalExp=activeManifest&&activeManifest.items?activeManifest.items.reduce((s,i)=>s+i.qty,0):0;
   const totalRcv=Object.values(received).reduce((s,v)=>s+v,0);
@@ -1165,6 +1208,68 @@ const goRecv=()=>{stopCam();setAppMode('receiving');setPage('recv');setLastResul
       if(overlay)overlay.remove();
     };
   },[page,activeManifest,sessionId,onScan]);
+
+
+  const correctBarcodeMapping=()=>{
+    if(!activeManifest)return;
+
+    const barcode=window.prompt('Escanea o escribe el barcode que quieres corregir:');
+    if(!barcode)return;
+
+    const currentItem=upcMap[barcode.trim()]||'';
+    const itemNum=window.prompt('Escribe el Item # correcto para este barcode:',currentItem);
+    if(!itemNum)return;
+
+    const cleanBarcode=barcode.trim();
+    const cleanItem=itemNum.trim();
+
+    if(!mMap[cleanItem]){
+      alert('Ese Item # no existe en este manifiesto. Verifica el número y vuelve a intentar.');
+      return;
+    }
+
+    const newMap=Object.assign({},upcMap,{[cleanBarcode]:cleanItem});
+
+    setUpcMap(newMap);
+    LS.set('pos_upc_map',newMap);
+
+    alert('Barcode corregido correctamente. Ahora '+cleanBarcode+' = Item # '+cleanItem);
+    setTimeout(()=>manualRef.current&&manualRef.current.focus(),200);
+  };
+
+  useEffect(()=>{
+    const old=document.getElementById('pos-correct-barcode-button');
+    if(old)old.remove();
+
+    if(!(page==='recv'||page==='pos'))return;
+    if(!activeManifest||!sessionId)return;
+
+    const btn=document.createElement('button');
+    btn.id='pos-correct-barcode-button';
+    btn.textContent='🔁 Corregir barcode';
+    btn.style.position='fixed';
+    btn.style.left='12px';
+    btn.style.top='86px';
+    btn.style.zIndex='99999';
+    btn.style.background=C.yellow+'22';
+    btn.style.border='1px solid '+C.yellow;
+    btn.style.color=C.yellow;
+    btn.style.borderRadius='10px';
+    btn.style.padding='9px 11px';
+    btn.style.fontFamily='monospace';
+    btn.style.fontWeight='800';
+    btn.style.fontSize='11px';
+    btn.style.cursor='pointer';
+    btn.style.boxShadow='0 8px 24px rgba(0,0,0,.35)';
+    btn.onclick=correctBarcodeMapping;
+
+    document.body.appendChild(btn);
+
+    return()=>{
+      const el=document.getElementById('pos-correct-barcode-button');
+      if(el)el.remove();
+    };
+  },[page,activeManifest,sessionId,upcMap,mMap]);
 
 if(!sessionId){
     const code=entryCode;
