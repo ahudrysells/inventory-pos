@@ -243,7 +243,87 @@ function App(){
 },[handleScannedBarcode]);
 
   const confirmUpc=()=>{const n=upcInput.trim();if(!n||!upcPending)return;const b=upcPending;setUpcMap(p=>Object.assign({},p,{[b]:n}));api.post('/api/barcode',{session_id:sessionId,barcode:b,item_num:n}).catch(()=>setSyncDot('err'));processCode(n,b);setUpcPending(null);setUpcInput('');setTimeout(startCam,300);};
-  const onManual=e=>{
+  
+  useEffect(()=>{
+    const old=document.getElementById('pos-upc-keypad');
+    if(old)old.remove();
+
+    if(!upcPending)return;
+
+    const wrap=document.createElement('div');
+    wrap.id='pos-upc-keypad';
+    wrap.style.position='fixed';
+    wrap.style.left='50%';
+    wrap.style.bottom='18px';
+    wrap.style.transform='translateX(-50%)';
+    wrap.style.zIndex='100001';
+    wrap.style.background=C.panel;
+    wrap.style.border='1px solid '+C.accent;
+    wrap.style.borderRadius='14px';
+    wrap.style.padding='10px';
+    wrap.style.width='min(330px, calc(100vw - 24px))';
+    wrap.style.boxShadow='0 12px 35px rgba(0,0,0,.55)';
+    wrap.style.fontFamily='monospace';
+
+    const title=document.createElement('div');
+    title.textContent='Item #';
+    title.style.color=C.accent;
+    title.style.fontWeight='800';
+    title.style.fontSize='12px';
+    title.style.textAlign='center';
+    title.style.marginBottom='8px';
+    title.style.letterSpacing='2px';
+    title.style.textTransform='uppercase';
+    wrap.appendChild(title);
+
+    const makeBtn=(txt,fn,bg,color)=>{
+      const b=document.createElement('button');
+      b.textContent=txt;
+      b.style.background=bg||C.card;
+      b.style.color=color||C.text;
+      b.style.border='1px solid '+C.border;
+      b.style.borderRadius='10px';
+      b.style.padding='13px 8px';
+      b.style.fontSize='18px';
+      b.style.fontWeight='800';
+      b.style.fontFamily='monospace';
+      b.style.cursor='pointer';
+      b.onclick=fn;
+      return b;
+    };
+
+    const grid=document.createElement('div');
+    grid.style.display='grid';
+    grid.style.gridTemplateColumns='1fr 1fr 1fr';
+    grid.style.gap='7px';
+
+    ['1','2','3','4','5','6','7','8','9'].forEach(n=>{
+      grid.appendChild(makeBtn(n,()=>setUpcInput(v=>String(v||'')+n)));
+    });
+
+    grid.appendChild(makeBtn('⌫',()=>setUpcInput(v=>String(v||'').slice(0,-1)),C.red+'22',C.red));
+    grid.appendChild(makeBtn('0',()=>setUpcInput(v=>String(v||'')+'0')));
+    grid.appendChild(makeBtn('✓',()=>confirmUpc(),C.green,C.bg));
+
+    wrap.appendChild(grid);
+
+    const small=document.createElement('div');
+    small.textContent='Usa estos botones si el Eyoyo bloquea el teclado del iPhone.';
+    small.style.color=C.muted;
+    small.style.fontSize='10px';
+    small.style.textAlign='center';
+    small.style.marginTop='8px';
+    wrap.appendChild(small);
+
+    document.body.appendChild(wrap);
+
+    return()=>{
+      const el=document.getElementById('pos-upc-keypad');
+      if(el)el.remove();
+    };
+  },[upcPending,confirmUpc]);
+
+const onManual=e=>{
   e&&e.preventDefault();
 
   const raw=manualInput.trim();
