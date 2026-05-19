@@ -391,6 +391,202 @@ function App(){
     };
   },[upcPending,confirmUpc]);
 
+
+  useEffect(()=>{
+    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+
+    const cleanup=()=>{
+      const oldBtn=document.getElementById('pos-upc-keypad-toggle');
+      if(oldBtn)oldBtn.remove();
+
+      const oldPad=document.getElementById('pos-upc-keypad');
+      if(oldPad)oldPad.remove();
+    };
+
+    cleanup();
+
+    if(!isIOS)return;
+    if(!upcPending)return;
+
+    let keypadValue=String(upcInput||'');
+
+    const syncInput=()=>{
+      setUpcInput(keypadValue);
+      try{
+        if(upcRef.current){
+          upcRef.current.value=keypadValue;
+        }
+      }catch{}
+    };
+
+    const submitKeypad=()=>{
+      const n=keypadValue.trim();
+      const barcode=(upcPending||'').toString().trim();
+
+      if(!n||!barcode)return;
+
+      if(!mMap[n]){
+        alert('Ese Item # no existe en este manifiesto. Verifica el número.');
+        return;
+      }
+
+      const newMap=Object.assign({},upcMap,{[barcode]:n});
+
+      setUpcMap(newMap);
+      LS.set('pos_upc_map',newMap);
+
+      setUpcPending(null);
+      setUpcInput('');
+
+      processCode(n);
+
+      setTimeout(()=>{
+        manualRef.current&&manualRef.current.focus();
+      },150);
+    };
+
+    const openKeypad=()=>{
+      const existing=document.getElementById('pos-upc-keypad');
+      if(existing){
+        existing.remove();
+        return;
+      }
+
+      const wrap=document.createElement('div');
+      wrap.id='pos-upc-keypad';
+      wrap.style.position='fixed';
+      wrap.style.left='50%';
+      wrap.style.bottom='18px';
+      wrap.style.transform='translateX(-50%)';
+      wrap.style.zIndex='100001';
+      wrap.style.background=C.panel;
+      wrap.style.border='1px solid '+C.accent;
+      wrap.style.borderRadius='14px';
+      wrap.style.padding='10px';
+      wrap.style.width='min(300px, calc(100vw - 30px))';
+      wrap.style.boxShadow='0 12px 35px rgba(0,0,0,.55)';
+      wrap.style.fontFamily='monospace';
+
+      const top=document.createElement('div');
+      top.style.display='flex';
+      top.style.justifyContent='space-between';
+      top.style.alignItems='center';
+      top.style.marginBottom='8px';
+
+      const title=document.createElement('div');
+      title.textContent='Item #';
+      title.style.color=C.accent;
+      title.style.fontWeight='800';
+      title.style.fontSize='12px';
+      title.style.letterSpacing='2px';
+      title.style.textTransform='uppercase';
+
+      const close=document.createElement('button');
+      close.textContent='×';
+      close.style.background=C.red+'22';
+      close.style.border='1px solid '+C.red;
+      close.style.color=C.red;
+      close.style.borderRadius='999px';
+      close.style.width='28px';
+      close.style.height='28px';
+      close.style.fontWeight='900';
+      close.style.cursor='pointer';
+      close.onclick=()=>wrap.remove();
+
+      top.appendChild(title);
+      top.appendChild(close);
+      wrap.appendChild(top);
+
+      const makeBtn=(txt,fn,bg,color)=>{
+        const b=document.createElement('button');
+        b.textContent=txt;
+        b.style.background=bg||C.card;
+        b.style.color=color||C.text;
+        b.style.border='1px solid '+C.border;
+        b.style.borderRadius='10px';
+        b.style.padding='12px 8px';
+        b.style.fontSize='17px';
+        b.style.fontWeight='800';
+        b.style.fontFamily='monospace';
+        b.style.cursor='pointer';
+        b.onclick=fn;
+        return b;
+      };
+
+      const grid=document.createElement('div');
+      grid.style.display='grid';
+      grid.style.gridTemplateColumns='1fr 1fr 1fr';
+      grid.style.gap='7px';
+
+      ['1','2','3','4','5','6','7','8','9'].forEach(n=>{
+        grid.appendChild(makeBtn(n,()=>{
+          keypadValue+=n;
+          syncInput();
+        }));
+      });
+
+      grid.appendChild(makeBtn('⌫',()=>{
+        keypadValue=keypadValue.slice(0,-1);
+        syncInput();
+      },C.red+'22',C.red));
+
+      grid.appendChild(makeBtn('0',()=>{
+        keypadValue+='0';
+        syncInput();
+      }));
+
+      grid.appendChild(makeBtn('✓',submitKeypad,C.green,C.bg));
+
+      wrap.appendChild(grid);
+      document.body.appendChild(wrap);
+    };
+
+    const btn=document.createElement('button');
+    btn.id='pos-upc-keypad-toggle';
+    btn.textContent='⌨️ Teclado';
+    btn.style.position='fixed';
+    btn.style.left='50%';
+    btn.style.transform='translateX(-50%)';
+    btn.style.zIndex='100001';
+    btn.style.background=C.accent+'22';
+    btn.style.border='1px solid '+C.accent;
+    btn.style.color=C.accent;
+    btn.style.borderRadius='999px';
+    btn.style.padding='7px 12px';
+    btn.style.fontFamily='monospace';
+    btn.style.fontWeight='800';
+    btn.style.fontSize='11px';
+    btn.style.cursor='pointer';
+    btn.style.boxShadow='0 8px 20px rgba(0,0,0,.35)';
+    btn.onclick=openKeypad;
+
+    const placeButton=()=>{
+      try{
+        if(upcRef.current){
+          const r=upcRef.current.getBoundingClientRect();
+          btn.style.top=(r.bottom+8)+'px';
+          btn.style.bottom='auto';
+        }else{
+          btn.style.bottom='82px';
+          btn.style.top='auto';
+        }
+      }catch{
+        btn.style.bottom='82px';
+        btn.style.top='auto';
+      }
+    };
+
+    document.body.appendChild(btn);
+    setTimeout(placeButton,80);
+    window.addEventListener('resize',placeButton);
+
+    return()=>{
+      window.removeEventListener('resize',placeButton);
+      cleanup();
+    };
+  },[upcPending,upcMap,mMap,processCode]);
+
 const onManual=e=>{
   e&&e.preventDefault();
 
