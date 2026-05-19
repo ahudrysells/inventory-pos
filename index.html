@@ -587,6 +587,83 @@ const onManual=e=>{
   const totalSales=salesLog.reduce((s,t)=>s+Number(t.price),0);
   const totalStockLeft=Object.values(stock).reduce((s,v)=>s+v,0);
 
+  const SQUARE_APP_ID='sq0idp-PIwfwQAA_2BAaEXm6XosOw';
+
+  const getSquareCallbackUrl=()=>{
+    return window.location.origin + '/';
+  };
+
+  const isIOS=()=>{
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  };
+
+  const isAndroid=()=>{
+    return /Android/i.test(navigator.userAgent);
+  };
+
+  const openSquarePOS=(amount, note)=>{
+    const cents=Math.round((Number(amount)||0)*100);
+
+    if(cents<=0){
+      alert('El total debe ser mayor de $0.00 para cobrar con Square.');
+      return false;
+    }
+
+    const callbackUrl=getSquareCallbackUrl();
+
+    if(isIOS()){
+      const data={
+        amount_money:{
+          amount:cents,
+          currency_code:'USD'
+        },
+        callback_url:callbackUrl,
+        client_id:SQUARE_APP_ID,
+        version:'1.3',
+        notes:note||'Klou POS sale',
+        options:{
+          supported_tender_types:['CREDIT_CARD'],
+          clear_default_fees:true,
+          auto_return:true,
+          skip_receipt:false
+        }
+      };
+
+      const url='square-commerce-v1://payment/create?data='+
+        encodeURIComponent(JSON.stringify(data));
+
+      window.location.href=url;
+      return true;
+    }
+
+    if(isAndroid()){
+      const callback=encodeURIComponent(callbackUrl);
+      const fallback=encodeURIComponent(window.location.href);
+
+      const url=
+        'intent:#Intent;' +
+        'action=com.squareup.pos.action.CHARGE;' +
+        'package=com.squareup;' +
+        'S.browser_fallback_url=' + fallback + ';' +
+        'S.com.squareup.pos.WEB_CALLBACK_URI=' + callback + ';' +
+        'S.com.squareup.pos.CLIENT_ID=' + SQUARE_APP_ID + ';' +
+        'S.com.squareup.pos.API_VERSION=v2.0;' +
+        'i.com.squareup.pos.TOTAL_AMOUNT=' + cents + ';' +
+        'S.com.squareup.pos.CURRENCY_CODE=USD;' +
+        'S.com.squareup.pos.TENDER_TYPES=com.squareup.pos.TENDER_CARD;' +
+        'end';
+
+      window.location.href=url;
+      return true;
+    }
+
+    alert('Square POS solo se abre automáticamente desde iPhone o Android con la app de Square instalada.');
+    return false;
+  };
+
+
+
   const adjustReceivedQty=async(itemNum,currentQty)=>{
     const item=mMap[itemNum];
 
@@ -676,6 +753,17 @@ const onManual=e=>{
 
     const subtotal=units.reduce((sum,u)=>sum+Number(u.price||0),0);
     const finalTotal=payMethod==='gift'?0:(parseFloat(cartTotal)||subtotal||0);
+
+    if(payMethod==='card'){
+      const ok=window.confirm(
+        'Se abrirá Square para cobrar $'+Number(finalTotal||0).toFixed(2)+
+        '.\n\nDespués de cobrar, vuelve a Klou POS. La venta quedará registrada como Tarjeta.'
+      );
+
+      if(!ok)return;
+
+      openSquarePOS(finalTotal,'Klou POS - '+cartQty+' item(s)');
+    }
     const totalCents=Math.round(finalTotal*100);
     let remainingCents=totalCents;
 
