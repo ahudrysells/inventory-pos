@@ -1173,8 +1173,19 @@ const goRecv=()=>{stopCam();setAppMode('receiving');setPage('recv');setLastResul
       document.body.appendChild(overlay);
 
       let scanner=null;
+      let iosScanLocked=false;
 
       const stopScanner=()=>{
+        iosScanLocked=true;
+
+        try{
+          const video=overlay.querySelector('video');
+          if(video && video.srcObject){
+            video.srcObject.getTracks().forEach(t=>t.stop());
+            video.srcObject=null;
+          }
+        }catch{}
+
         try{
           if(scanner){
             scanner.stop()
@@ -1182,7 +1193,14 @@ const goRecv=()=>{stopCam();setAppMode('receiving');setPage('recv');setLastResul
               .catch(()=>{});
           }
         }catch{}
-        overlay.remove();
+
+        try{
+          if(overlay && overlay.parentNode){
+            overlay.remove();
+          }
+        }catch{}
+
+        scanner=null;
       };
 
       close.onclick=stopScanner;
@@ -1209,7 +1227,19 @@ const goRecv=()=>{stopCam();setAppMode('receiving');setPage('recv');setLastResul
             formatsToSupport:formats
           },
           decodedText=>{
-            onScan(decodedText);
+            if(iosScanLocked)return;
+
+            iosScanLocked=true;
+
+            const code=String(decodedText||'').trim();
+
+            stopScanner();
+
+            if(code){
+              setTimeout(()=>{
+                onScan(code);
+              },100);
+            }
           },
           errorMessage=>{}
         ).catch(err=>{
