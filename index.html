@@ -265,6 +265,55 @@ function App(){
   const totalSales=salesLog.reduce((s,t)=>s+Number(t.price),0);
   const totalStockLeft=Object.values(stock).reduce((s,v)=>s+v,0);
 
+  const adjustReceivedQty=async(itemNum,currentQty)=>{
+    const item=mMap[itemNum];
+
+    if(!item){
+      alert('Ese Item # no está en este manifiesto.');
+      return;
+    }
+
+    const answer=window.prompt(
+      'Cantidad recibida correcta para Item # '+itemNum+'\n\n'+
+      (item.description||'')+'\n\n'+
+      'Esperado: '+(item.qty||0)+'\n'+
+      'Actual recibido:',
+      String(currentQty||0)
+    );
+
+    if(answer===null)return;
+
+    const qty=Math.max(0,parseInt(answer,10)||0);
+
+    const newRcv=Object.assign({},received,{[itemNum]:qty});
+
+    setReceived(newRcv);
+    LS.set('pos_rcv_'+activeId,newRcv);
+
+    setLastResult(Object.assign({},item,{status:'found'}));
+
+    try{
+      const r=await api.post('/api/receive',{
+        session_id:sessionId,
+        manifest_id:activeId,
+        item_num:itemNum,
+        qty:qty
+      });
+
+      if(r&&r.error)throw new Error(r.error);
+
+      setSyncDot('ok');
+      setTimeout(()=>setSyncDot(''),1500);
+    }catch(e){
+      setSyncDot('err');
+      alert('No se pudo actualizar la cantidad: '+e.message);
+    }
+
+    setTimeout(()=>manualRef.current&&manualRef.current.focus(),200);
+  };
+
+
+
   const cartQty=cart.reduce((sum,l)=>sum+(Number(l.qty)||0),0);
   const cartSubtotal=cart.reduce((sum,l)=>sum+((Number(l.qty)||0)*(Number(l.price)||0)),0);
 
@@ -1438,7 +1487,7 @@ if(!sessionId){
       if(!item)return null;
       const ok=qty>=item.qty;
       return React.createElement('div',{key:itemNum,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid '+C.dim}},
-        React.createElement('div',{style:{width:32,height:32,borderRadius:7,background:ok?'#0a2010':'#2b1e00',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,color:ok?C.green:C.yellow,fontSize:13,flexShrink:0}},qty),
+        React.createElement('div',{onClick:()=>adjustReceivedQty(itemNum,qty),title:'Click para ajustar cantidad recibida',style:{width:32,height:32,borderRadius:7,background:ok?'#0a2010':'#2b1e00',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,color:ok?C.green:C.yellow,fontSize:13,flexShrink:0,cursor:'pointer',border:'1px solid '+(ok?C.green:C.yellow)}},qty),
         React.createElement('div',{style:{flex:1,minWidth:0}},
           React.createElement('div',{style:{fontSize:12,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},item.description),
           React.createElement('div',{style:{color:C.muted,fontSize:10}},item.brand,' · #',itemNum)
