@@ -136,10 +136,10 @@ function App(){
   useEffect(()=>()=>stopCam(),[]);
   const audioCtxRef=useRef(null);
 
-  const playBeep=(type='ok')=>{
+  const getAudioCtx=()=>{
     try{
       const AudioContext=window.AudioContext||window.webkitAudioContext;
-      if(!AudioContext)return;
+      if(!AudioContext)return null;
 
       if(!audioCtxRef.current){
         audioCtxRef.current=new AudioContext();
@@ -151,35 +151,61 @@ function App(){
         ctx.resume().catch(()=>{});
       }
 
+      return ctx;
+    }catch{
+      return null;
+    }
+  };
+
+  const playTone=(freq,duration=0.08,volume=0.16,delay=0,type='square')=>{
+    try{
+      const ctx=getAudioCtx();
+      if(!ctx)return;
+
       const osc=ctx.createOscillator();
       const gain=ctx.createGain();
 
-      osc.type='sine';
+      const startAt=ctx.currentTime+delay;
+      const endAt=startAt+duration;
 
-      if(type==='ok'){
-        osc.frequency.setValueAtTime(880,ctx.currentTime);
-        gain.gain.setValueAtTime(0.001,ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.18,ctx.currentTime+0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.16);
-      }else{
-        osc.frequency.setValueAtTime(220,ctx.currentTime);
-        gain.gain.setValueAtTime(0.001,ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.22,ctx.currentTime+0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.28);
-      }
+      osc.type=type;
+      osc.frequency.setValueAtTime(freq,startAt);
+
+      gain.gain.setValueAtTime(0.001,startAt);
+      gain.gain.exponentialRampToValueAtTime(volume,startAt+0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001,endAt);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
-      osc.start();
-      osc.stop(ctx.currentTime+(type==='ok'?0.18:0.30));
+      osc.start(startAt);
+      osc.stop(endAt+0.02);
     }catch{}
+  };
+
+  const playScannerBeep=()=>{
+    // Beep corto tipo scanner
+    playTone(1450,0.075,0.18,0,'square');
+  };
+
+  const playErrorBeep=()=>{
+    // Beep grave doble
+    playTone(220,0.14,0.22,0,'sawtooth');
+    playTone(180,0.14,0.22,0.20,'sawtooth');
+  };
+
+  const playCashRegister=()=>{
+    // Sonido tipo cash register / checkout completado
+    playTone(880,0.07,0.14,0,'triangle');
+    playTone(1175,0.08,0.14,0.09,'triangle');
+    playTone(1568,0.16,0.16,0.19,'triangle');
+    playTone(660,0.12,0.10,0.36,'sine');
   };
 
   useEffect(()=>{
     const unlock=()=>{
       try{
-        playBeep('ok');
+        getAudioCtx();
       }catch{}
 
       window.removeEventListener('pointerdown',unlock);
@@ -199,13 +225,25 @@ function App(){
   },[]);
 
   const pulse=type=>{
-    setFlash(type);
+    setFlash(type==='miss'?'miss':'ok');
     setTimeout(()=>setFlash(null),350);
 
-    playBeep(type==='ok'?'ok':'miss');
+    if(type==='checkout'||type==='gift'){
+      playCashRegister();
+    }else if(type==='ok'){
+      playScannerBeep();
+    }else{
+      playErrorBeep();
+    }
 
     if(navigator.vibrate){
-      navigator.vibrate(type==='ok'?[80]:[90,50,90]);
+      if(type==='checkout'||type==='gift'){
+        navigator.vibrate([80,40,120]);
+      }else if(type==='ok'){
+        navigator.vibrate([60]);
+      }else{
+        navigator.vibrate([90,50,90]);
+      }
     }
   };
 
@@ -902,7 +940,7 @@ const onManual=e=>{
       setCheckoutOpen(false);
       setCartTotal('');
       setLastResult(Object.assign({},txs[0],{status:'sold',price:finalTotal,payMethod:payMethod}));
-      pulse('ok');
+      pulse(payMethod==='gift'?'gift':'checkout');
 
       setSyncDot('ok');
       setTimeout(()=>setSyncDot(''),1500);
