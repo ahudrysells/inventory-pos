@@ -134,7 +134,81 @@ function App(){
   const stopCam=()=>{scanningRef.current=false;streamRef.current&&streamRef.current.getTracks().forEach(t=>t.stop());streamRef.current=null;setCameraActive(false);};
   const camLoop=async()=>{if(!scanningRef.current||!detRef.current||!videoRef.current)return;if(videoRef.current.readyState>=2){try{const codes=await detRef.current.detect(videoRef.current);if(codes.length>0){onScan(codes[0].rawValue);await new Promise(r=>setTimeout(r,1500));}}catch{}}if(scanningRef.current)requestAnimationFrame(camLoop);};
   useEffect(()=>()=>stopCam(),[]);
-  const pulse=type=>{setFlash(type);setTimeout(()=>setFlash(null),350);if(navigator.vibrate)navigator.vibrate(type==='ok'?[70]:[70,40,70]);};
+  const audioCtxRef=useRef(null);
+
+  const playBeep=(type='ok')=>{
+    try{
+      const AudioContext=window.AudioContext||window.webkitAudioContext;
+      if(!AudioContext)return;
+
+      if(!audioCtxRef.current){
+        audioCtxRef.current=new AudioContext();
+      }
+
+      const ctx=audioCtxRef.current;
+
+      if(ctx.state==='suspended'){
+        ctx.resume().catch(()=>{});
+      }
+
+      const osc=ctx.createOscillator();
+      const gain=ctx.createGain();
+
+      osc.type='sine';
+
+      if(type==='ok'){
+        osc.frequency.setValueAtTime(880,ctx.currentTime);
+        gain.gain.setValueAtTime(0.001,ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.18,ctx.currentTime+0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.16);
+      }else{
+        osc.frequency.setValueAtTime(220,ctx.currentTime);
+        gain.gain.setValueAtTime(0.001,ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.22,ctx.currentTime+0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.28);
+      }
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      osc.stop(ctx.currentTime+(type==='ok'?0.18:0.30));
+    }catch{}
+  };
+
+  useEffect(()=>{
+    const unlock=()=>{
+      try{
+        playBeep('ok');
+      }catch{}
+
+      window.removeEventListener('pointerdown',unlock);
+      window.removeEventListener('touchstart',unlock);
+      window.removeEventListener('click',unlock);
+    };
+
+    window.addEventListener('pointerdown',unlock,{once:true});
+    window.addEventListener('touchstart',unlock,{once:true});
+    window.addEventListener('click',unlock,{once:true});
+
+    return()=>{
+      window.removeEventListener('pointerdown',unlock);
+      window.removeEventListener('touchstart',unlock);
+      window.removeEventListener('click',unlock);
+    };
+  },[]);
+
+  const pulse=type=>{
+    setFlash(type);
+    setTimeout(()=>setFlash(null),350);
+
+    playBeep(type==='ok'?'ok':'miss');
+
+    if(navigator.vibrate){
+      navigator.vibrate(type==='ok'?[80]:[90,50,90]);
+    }
+  };
+
   const processCode=useCallback(async itemNum=>{
   itemNum=itemNum.toString().trim();
 
