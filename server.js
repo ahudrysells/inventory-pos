@@ -47,6 +47,20 @@ pool.query(`
 .then(() => console.log('DB ready'))
 .catch(err => console.error('DB error:', err.message));
 
+
+pool.query(`
+  CREATE TABLE IF NOT EXISTS pos_damaged (
+    session_id TEXT,
+    manifest_id TEXT,
+    item_num TEXT,
+    qty INTEGER DEFAULT 0,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (session_id, manifest_id, item_num)
+  );
+`)
+.then(() => console.log('Damaged table ready'))
+.catch(err => console.error('Damaged table error:', err.message));
+
 const clients = {};
 
 function notify(sid, data) {
@@ -90,27 +104,32 @@ app.get('/api/manifests/:sid', async (req, res) => {
   }
 });
 
-app.get('/api/data/:sid/:mid', async (req, res) => {
-  try {
-    const { sid, mid } = req.params;
+app.get('/api/data/:sid/:mid', async(req,res)=>{
+  try{
+    const {sid,mid}=req.params;
 
-    const [received, sales] = await Promise.all([
+    const [received,sales,damaged]=await Promise.all([
       pool.query(
-        'SELECT * FROM pos_received WHERE session_id = $1 AND manifest_id = $2',
-        [sid, mid]
+        'SELECT * FROM pos_received WHERE session_id=$1 AND manifest_id=$2',
+        [sid,mid]
       ),
       pool.query(
-        'SELECT * FROM pos_sales WHERE session_id = $1 AND manifest_id = $2 ORDER BY created_at DESC',
-        [sid, mid]
+        'SELECT * FROM pos_sales WHERE session_id=$1 AND manifest_id=$2 ORDER BY created_at DESC',
+        [sid,mid]
+      ),
+      pool.query(
+        'SELECT * FROM pos_damaged WHERE session_id=$1 AND manifest_id=$2',
+        [sid,mid]
       )
     ]);
 
     res.json({
       received: received.rows,
-      sales: sales.rows
+      sales: sales.rows,
+      damaged: damaged.rows
     });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+  }catch(e){
+    res.status(500).json({error:e.message});
   }
 });
 
@@ -136,6 +155,31 @@ app.post('/api/receive', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/damaged', async(req,res)=>{
+  try{
+    const {session_id,manifest_id,item_num,qty}=req.body;
+
+    await pool.query(
+      `INSERT INTO pos_damaged(session_id,manifest_id,item_num,qty,updated_at)
+       VALUES($1,$2,$3,$4,NOW())
+       ON CONFLICT(session_id,manifest_id,item_num)
+       DO UPDATE SET qty=$4, updated_at=NOW()`,
+      [session_id,manifest_id,item_num,qty]
+    );
+
+    notify(session_id,{
+      type:'damaged',
+      manifest_id,
+      item_num,
+      qty
+    });
+
+    res.json({ok:true});
+  }catch(e){
+    res.status(500).json({error:e.message});
   }
 });
 
@@ -213,6 +257,11 @@ app.delete('/api/manifest/:sid/:mid', async (req, res) => {
 
     await client.query(
       'DELETE FROM pos_sales WHERE session_id = $1 AND manifest_id = $2',
+      [sid, mid]
+    );
+
+    await client.query(
+      'DELETE FROM pos_damaged WHERE session_id = $1 AND manifest_id = $2',
       [sid, mid]
     );
 

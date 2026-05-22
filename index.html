@@ -90,6 +90,7 @@ function App(){
   const [appMode,setAppMode]=useState(()=>LS.get('pos_app_mode','receiving'));
   const [page,setPage]=useState(()=>LS.get('pos_page','home'));
   const [received,setReceived]=useState({});
+  const [damaged,setDamaged]=useState({});
   const [salesLog,setSalesLog]=useState([]);
   const [cart,setCart]=useState([]);
   const [checkoutOpen,setCheckoutOpen]=useState(false);
@@ -121,11 +122,58 @@ function App(){
 
   const activeManifest=useMemo(()=>manifests.find(m=>m.id===activeId),[manifests,activeId]);
   const mMap=useMemo(()=>{const map={};activeManifest&&activeManifest.items&&activeManifest.items.forEach(i=>map[i.itemNum]=i);return map;},[activeManifest]);
-  const stock=useMemo(()=>{const s={};if(!activeManifest||!activeManifest.items)return s;activeManifest.items.forEach(i=>{s[i.itemNum]=received[i.itemNum]||0;});salesLog.forEach(t=>{const k=t.item_num||t.itemNum;if(s[k]!==undefined)s[k]=Math.max(0,s[k]-1);});return s;},[activeManifest,received,salesLog]);
+  const stock=useMemo(()=>{
+    const s={};
+
+    if(!activeManifest||!activeManifest.items)return s;
+
+    activeManifest.items.forEach(i=>{
+      const rec=Number(received[i.itemNum]||0);
+      const dmg=Number(damaged[i.itemNum]||0);
+      s[i.itemNum]=Math.max(0,rec-dmg);
+    });
+
+    salesLog.forEach(t=>{
+      const k=t.item_num||t.itemNum;
+      if(s[k]!==undefined)s[k]=Math.max(0,s[k]-1);
+    });
+
+    return s;
+  },[activeManifest,received,damaged,salesLog]);
+
   const loadManifests=useCallback(async sid=>{try{const d=await api.get('/api/manifests/'+sid);if(Array.isArray(d))setManifests(d.map(m=>({...m,items:m.items||[]})));}catch(e){console.error(e);}},[]);
   const loadBarcodes=useCallback(async sid=>{try{const d=await api.get('/api/barcodes/'+sid);if(d&&d.map)setUpcMap(prev=>Object.assign({},prev,d.map));}catch(e){console.error(e);}},[]);
   useEffect(()=>{if(sessionId){loadManifests(sessionId);loadBarcodes(sessionId);}},[sessionId]);
-  const loadData=useCallback(async mId=>{if(!mId||!sessionId)return;try{const d=await api.get('/api/data/'+sessionId+'/'+mId);const rm={};(d.received||[]).forEach(r=>{rm[r.item_num]=r.qty;});setReceived(rm);setSalesLog(d.sales||[]);LS.set('pos_rcv_'+mId,rm);LS.set('pos_sales_'+mId,d.sales||[]);}catch{setReceived(LS.get('pos_rcv_'+mId,{}));setSalesLog(LS.get('pos_sales_'+mId,[]));}},[ sessionId]);
+  const loadData=useCallback(async mId=>{
+    if(!mId||!sessionId)return;
+
+    try{
+      const d=await api.get('/api/data/'+sessionId+'/'+mId);
+
+      const rm={};
+      (d.received||[]).forEach(r=>{
+        rm[r.item_num]=r.qty;
+      });
+
+      const dm={};
+      (d.damaged||[]).forEach(r=>{
+        dm[r.item_num]=r.qty;
+      });
+
+      setReceived(rm);
+      setDamaged(dm);
+      setSalesLog(d.sales||[]);
+
+      LS.set('pos_rcv_'+mId,rm);
+      LS.set('pos_dmg_'+mId,dm);
+      LS.set('pos_sales_'+mId,d.sales||[]);
+    }catch{
+      setReceived(LS.get('pos_rcv_'+mId,{}));
+      setDamaged(LS.get('pos_dmg_'+mId,{}));
+      setSalesLog(LS.get('pos_sales_'+mId,[]));
+    }
+  },[sessionId]);
+
   useEffect(()=>{if(!activeId||!sessionId)return;setReceived({});setSalesLog([]);setLastResult(null);loadData(activeId);if(evsRef.current)evsRef.current.close();const evs=new EventSource('/api/events/'+sessionId);evsRef.current=evs;evs.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==='receive'&&d.manifest_id===activeId){setReceived(prev=>({...prev,[d.item_num]:d.qty}));setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}if(d.type==='sale'&&d.manifest_id===activeId){setSalesLog(prev=>[d,...prev]);setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}}catch{}};return()=>{evs.close();};},[activeId,sessionId]);
   useEffect(()=>{LS.set('pos_upc_map',upcMap);},[upcMap]);
   const onFile=e=>{const file=e.target.files[0];if(!file)return;e.target.value='';Papa.parse(file,{header:true,skipEmptyLines:true,complete:({data})=>{const items=data.map(r=>({itemNum:r['Item #']&&r['Item #'].trim(),description:(r['Item Description']&&r['Item Description'].trim())||'—',qty:parseInt(r['Qty'])||0,unitRetail:parseFloat(r['Unit Retail'])||0,brand:(r['Brand']&&r['Brand'].trim())||(r['Vendor']&&r['Vendor'].trim())||'—'})).filter(i=>i.itemNum);const nm={id:genId(),session_id:sessionId,name:file.name.replace('.csv','').replace(/_/g,' ').substring(0,45),uploadedAt:new Date().toLocaleDateString('en-US'),items};api.post('/api/manifest',nm).catch(console.error);setManifests(p=>[nm,...p]);setActiveId(nm.id);setAppMode('receiving');setPage('recv');}});};
@@ -698,6 +746,136 @@ const onManual=e=>{
   salesLog.forEach(t=>{const pm=t.pay_method||t.payMethod;if(salesByPay[pm]!==undefined){salesByPay[pm]+=Number(t.price);cntByPay[pm]+=1;}});
   const totalSales=salesLog.reduce((s,t)=>s+Number(t.price),0);
   const totalStockLeft=Object.values(stock).reduce((s,v)=>s+v,0);
+
+  const saveDamagedQty=async(itemNum,qty)=>{
+    const cleanQty=Math.max(0,parseInt(qty,10)||0);
+    const newDamaged=Object.assign({},damaged,{[itemNum]:cleanQty});
+
+    setDamaged(newDamaged);
+    LS.set('pos_dmg_'+activeId,newDamaged);
+
+    try{
+      const r=await api.post('/api/damaged',{
+        session_id:sessionId,
+        manifest_id:activeId,
+        item_num:itemNum,
+        qty:cleanQty
+      });
+
+      if(r&&r.error)throw new Error(r.error);
+
+      setSyncDot('ok');
+      setTimeout(()=>setSyncDot(''),1500);
+    }catch(e){
+      setSyncDot('err');
+      alert('No se pudo guardar dañado: '+e.message);
+    }
+  };
+
+  const markDamagedItem=async(itemNum)=>{
+    if(!itemNum||!mMap[itemNum])return;
+
+    const rec=Number(received[itemNum]||0);
+    const dmg=Number(damaged[itemNum]||0);
+
+    if(rec<=0){
+      alert('Primero debes recibir/escnear este item antes de marcarlo como dañado.');
+      return;
+    }
+
+    if(dmg>=rec){
+      alert('Ya marcaste todas las unidades recibidas de este item como dañadas.');
+      return;
+    }
+
+    const item=mMap[itemNum];
+
+    const ok=window.confirm(
+      '¿Marcar 1 unidad como dañada?\\n\\n'+
+      'Item # '+itemNum+'\\n'+
+      (item.description||'')+'\\n\\n'+
+      'Recibido total: '+rec+'\\n'+
+      'Dañado actual: '+dmg
+    );
+
+    if(!ok)return;
+
+    await saveDamagedQty(itemNum,dmg+1);
+
+    setLastResult(Object.assign({},item,{
+      status:'found',
+      damaged:true
+    }));
+
+    pulse('miss');
+  };
+
+  const editDamagedQty=async(itemNum)=>{
+    if(!itemNum||!mMap[itemNum])return;
+
+    const rec=Number(received[itemNum]||0);
+    const dmg=Number(damaged[itemNum]||0);
+    const item=mMap[itemNum];
+
+    const answer=window.prompt(
+      'Cantidad dañada para Item # '+itemNum+'\\n\\n'+
+      (item.description||'')+'\\n\\n'+
+      'Recibido total: '+rec+'\\n'+
+      'Dañado actual:',
+      String(dmg)
+    );
+
+    if(answer===null)return;
+
+    const qty=Math.max(0,parseInt(answer,10)||0);
+
+    if(qty>rec){
+      alert('No puedes marcar más dañados que la cantidad recibida.');
+      return;
+    }
+
+    await saveDamagedQty(itemNum,qty);
+  };
+
+  useEffect(()=>{
+    const old=document.getElementById('pos-damaged-button');
+    if(old)old.remove();
+
+    if(page!=='recv')return;
+    if(!activeManifest||!lastResult||lastResult.status!=='found')return;
+
+    const itemNum=lastResult.itemNum||lastResult.item_num;
+    if(!itemNum)return;
+
+    const btn=document.createElement('button');
+    btn.id='pos-damaged-button';
+    btn.textContent='⚠️ Dañado';
+    btn.style.position='fixed';
+    btn.style.left='50%';
+    btn.style.bottom='104px';
+    btn.style.transform='translateX(-50%)';
+    btn.style.zIndex='99999';
+    btn.style.background=C.orange+'22';
+    btn.style.border='1px solid '+C.orange;
+    btn.style.color=C.orange;
+    btn.style.borderRadius='999px';
+    btn.style.padding='8px 13px';
+    btn.style.fontFamily='monospace';
+    btn.style.fontWeight='800';
+    btn.style.fontSize='11px';
+    btn.style.cursor='pointer';
+    btn.style.boxShadow='0 8px 24px rgba(0,0,0,.35)';
+    btn.onclick=()=>markDamagedItem(itemNum);
+
+    document.body.appendChild(btn);
+
+    return()=>{
+      const el=document.getElementById('pos-damaged-button');
+      if(el)el.remove();
+    };
+  },[page,activeManifest,lastResult,received,damaged]);
+
+
 
   const SQUARE_APP_ID='sq0idp-PIwfwQAA_2BAaEXm6XosOw';
 
@@ -1322,18 +1500,39 @@ const onManual=e=>{
     if(!activeManifest||!activeManifest.items)return;
 
     const rows=[
-      ['Klou POS - Recibido vs Esperado'],
+      ['Inventory POS - Recibido vs Esperado'],
       ['Manifest',activeManifest.name||activeManifest.id],
       ['Session',sessionId],
       ['Report Date',new Date().toLocaleString('en-US')],
       [],
-      ['Item #','Description','Brand','Expected Qty','Received Qty','Difference','Unit Retail','Expected Total','Received Total']
+      [
+        'Item #',
+        'Description',
+        'Brand',
+        'Expected Qty',
+        'Received Total',
+        'Damaged Qty',
+        'Sellable Qty',
+        'Missing Qty',
+        'Unit Retail',
+        'Expected Total',
+        'Loss Value',
+        'Status'
+      ]
     ];
 
     activeManifest.items.forEach(item=>{
       const expected=Number(item.qty)||0;
       const rec=Number(received[item.itemNum]||0);
+      const dmg=Number(damaged[item.itemNum]||0);
+      const sellable=Math.max(0,rec-dmg);
+      const missing=Math.max(0,expected-rec);
       const unit=Number(item.unitRetail)||0;
+
+      let status='OK';
+      if(dmg>0)status='DAMAGED';
+      if(missing>0)status=dmg>0?'DAMAGED / MISSING':'MISSING';
+      if(rec>expected)status=dmg>0?'DAMAGED / OVER':'OVER RECEIVED';
 
       rows.push([
         item.itemNum,
@@ -1341,18 +1540,38 @@ const onManual=e=>{
         item.brand||'',
         expected,
         rec,
-        rec-expected,
+        dmg,
+        sellable,
+        missing,
         unit.toFixed(2),
         (expected*unit).toFixed(2),
-        (rec*unit).toFixed(2)
+        (dmg*unit).toFixed(2),
+        status
       ]);
     });
 
     const totalExpected=activeManifest.items.reduce((sum,item)=>sum+(Number(item.qty)||0),0);
     const totalReceived=activeManifest.items.reduce((sum,item)=>sum+Number(received[item.itemNum]||0),0);
+    const totalDamaged=activeManifest.items.reduce((sum,item)=>sum+Number(damaged[item.itemNum]||0),0);
+    const totalSellable=activeManifest.items.reduce((sum,item)=>sum+Math.max(0,Number(received[item.itemNum]||0)-Number(damaged[item.itemNum]||0)),0);
+    const totalMissing=activeManifest.items.reduce((sum,item)=>sum+Math.max(0,(Number(item.qty)||0)-Number(received[item.itemNum]||0)),0);
+    const totalLoss=activeManifest.items.reduce((sum,item)=>sum+(Number(damaged[item.itemNum]||0)*(Number(item.unitRetail)||0)),0);
 
     rows.push([]);
-    rows.push(['TOTALS','','',totalExpected,totalReceived,totalReceived-totalExpected,'','','']);
+    rows.push([
+      'TOTALS',
+      '',
+      '',
+      totalExpected,
+      totalReceived,
+      totalDamaged,
+      totalSellable,
+      totalMissing,
+      '',
+      '',
+      totalLoss.toFixed(2),
+      ''
+    ]);
 
     downloadCSV(
       'recibido_vs_esperado_'+safeFileName(activeManifest.name)+'_'+todayISO()+'.csv',
@@ -2016,7 +2235,7 @@ if(!sessionId){
           React.createElement('div',{style:{fontSize:12,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},item.description),
           React.createElement('div',{style:{color:C.muted,fontSize:10}},item.brand,' · #',itemNum)
         ),
-        React.createElement('div',{style:{color:C.muted,fontSize:11,flexShrink:0}},'/',item.qty)
+        React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:3,flexShrink:0}},React.createElement('div',{style:{color:C.muted,fontSize:11}},'/',item.qty),Number(damaged[itemNum]||0)>0&&React.createElement('button',{onClick:()=>editDamagedQty(itemNum),style:{background:C.orange+'22',border:'1px solid '+C.orange,borderRadius:6,color:C.orange,fontSize:9,padding:'2px 5px',cursor:'pointer'}},'⚠️ ',damaged[itemNum]))
       );
     });
     return React.createElement('div',{style:{minHeight:'100vh',background:bg,transition:'background .15s',color:C.text,display:'flex',flexDirection:'column'}},
