@@ -1499,6 +1499,10 @@ const onManual=e=>{
   const downloadReceivedReport=()=>{
     if(!activeManifest||!activeManifest.items)return;
 
+    // Usar el valor más reciente guardado, no solo el estado visual.
+    const latestDamaged=LS.get('pos_dmg_'+activeId,{}) || damaged || {};
+    const latestReceived=LS.get('pos_rcv_'+activeId,{}) || received || {};
+
     const rows=[
       ['Inventory POS - Recibido vs Esperado'],
       ['Manifest',activeManifest.name||activeManifest.id],
@@ -1523,16 +1527,28 @@ const onManual=e=>{
 
     activeManifest.items.forEach(item=>{
       const expected=Number(item.qty)||0;
-      const rec=Number(received[item.itemNum]||0);
-      const dmg=Number(damaged[item.itemNum]||0);
+      const rec=Number(latestReceived[item.itemNum] ?? received[item.itemNum] ?? 0);
+      const dmgRaw=Number(latestDamaged[item.itemNum] ?? damaged[item.itemNum] ?? 0);
+      const dmg=Math.min(rec,Math.max(0,dmgRaw));
       const sellable=Math.max(0,rec-dmg);
       const missing=Math.max(0,expected-rec);
       const unit=Number(item.unitRetail)||0;
 
       let status='OK';
-      if(dmg>0)status='DAMAGED';
-      if(missing>0)status=dmg>0?'DAMAGED / MISSING':'MISSING';
-      if(rec>expected)status=dmg>0?'DAMAGED / OVER':'OVER RECEIVED';
+
+      if(dmg>0 && sellable===0){
+        status='ALL DAMAGED';
+      }else if(dmg>0){
+        status='DAMAGED';
+      }
+
+      if(missing>0){
+        status=dmg>0 ? status+' / MISSING' : 'MISSING';
+      }
+
+      if(rec>expected){
+        status=dmg>0 ? status+' / OVER' : 'OVER RECEIVED';
+      }
 
       rows.push([
         item.itemNum,
@@ -1551,11 +1567,35 @@ const onManual=e=>{
     });
 
     const totalExpected=activeManifest.items.reduce((sum,item)=>sum+(Number(item.qty)||0),0);
-    const totalReceived=activeManifest.items.reduce((sum,item)=>sum+Number(received[item.itemNum]||0),0);
-    const totalDamaged=activeManifest.items.reduce((sum,item)=>sum+Number(damaged[item.itemNum]||0),0);
-    const totalSellable=activeManifest.items.reduce((sum,item)=>sum+Math.max(0,Number(received[item.itemNum]||0)-Number(damaged[item.itemNum]||0)),0);
-    const totalMissing=activeManifest.items.reduce((sum,item)=>sum+Math.max(0,(Number(item.qty)||0)-Number(received[item.itemNum]||0)),0);
-    const totalLoss=activeManifest.items.reduce((sum,item)=>sum+(Number(damaged[item.itemNum]||0)*(Number(item.unitRetail)||0)),0);
+
+    const totalReceived=activeManifest.items.reduce((sum,item)=>{
+      return sum+Number(latestReceived[item.itemNum] ?? received[item.itemNum] ?? 0);
+    },0);
+
+    const totalDamaged=activeManifest.items.reduce((sum,item)=>{
+      const rec=Number(latestReceived[item.itemNum] ?? received[item.itemNum] ?? 0);
+      const dmgRaw=Number(latestDamaged[item.itemNum] ?? damaged[item.itemNum] ?? 0);
+      return sum+Math.min(rec,Math.max(0,dmgRaw));
+    },0);
+
+    const totalSellable=activeManifest.items.reduce((sum,item)=>{
+      const rec=Number(latestReceived[item.itemNum] ?? received[item.itemNum] ?? 0);
+      const dmgRaw=Number(latestDamaged[item.itemNum] ?? damaged[item.itemNum] ?? 0);
+      const dmg=Math.min(rec,Math.max(0,dmgRaw));
+      return sum+Math.max(0,rec-dmg);
+    },0);
+
+    const totalMissing=activeManifest.items.reduce((sum,item)=>{
+      const rec=Number(latestReceived[item.itemNum] ?? received[item.itemNum] ?? 0);
+      return sum+Math.max(0,(Number(item.qty)||0)-rec);
+    },0);
+
+    const totalLoss=activeManifest.items.reduce((sum,item)=>{
+      const rec=Number(latestReceived[item.itemNum] ?? received[item.itemNum] ?? 0);
+      const dmgRaw=Number(latestDamaged[item.itemNum] ?? damaged[item.itemNum] ?? 0);
+      const dmg=Math.min(rec,Math.max(0,dmgRaw));
+      return sum+(dmg*(Number(item.unitRetail)||0));
+    },0);
 
     rows.push([]);
     rows.push([
