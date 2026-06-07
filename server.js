@@ -658,6 +658,32 @@ app.delete('/api/manifest/:sid/:mid', async (req, res) => {
   }
 });
 
+
+
+app.delete('/api/sale/:sid/:saleId', async(req,res)=>{
+  try{
+    const {sid,saleId}=req.params;
+
+    const r=await pool.query(
+      'DELETE FROM pos_sales WHERE session_id=$1 AND id=$2',
+      [sid,saleId]
+    );
+
+    notify(sid,{
+      type:'delete_sale',
+      id:saleId
+    });
+
+    res.json({
+      ok:true,
+      deleted:r.rowCount
+    });
+  }catch(e){
+    res.status(500).json({error:e.message});
+  }
+});
+
+
 app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
