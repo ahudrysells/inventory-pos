@@ -142,7 +142,26 @@ function App(){
   },[activeManifest,received,damaged,salesLog]);
 
   const loadManifests=useCallback(async sid=>{try{const d=await api.get('/api/manifests/'+sid);if(Array.isArray(d))setManifests(d.map(m=>({...m,items:m.items||[]})));}catch(e){console.error(e);}},[]);
-  const loadBarcodes=useCallback(async sid=>{try{const d=await api.get('/api/barcodes/'+sid);if(d&&d.map)setUpcMap(prev=>Object.assign({},prev,d.map));}catch(e){console.error(e);}},[]);
+  const loadBarcodes=useCallback(async sid=>{
+    if(!sid)return {};
+
+    try{
+      const d=await api.get('/api/barcodes/'+sid);
+
+      if(d&&d.map){
+        const merged=Object.assign({},LS.get('pos_upc_map',{}),d.map);
+
+        LS.set('pos_upc_map',merged);
+        setUpcMap(merged);
+
+        return merged;
+      }
+    }catch(e){
+      console.error(e);
+    }
+
+    return LS.get('pos_upc_map',{});
+  },[]);
 
   const syncLocalBarcodesToDB=useCallback(async sid=>{
     if(!sid)return;
@@ -210,6 +229,12 @@ function App(){
 
   useEffect(()=>{if(!activeId||!sessionId)return;setReceived({});setSalesLog([]);setLastResult(null);loadData(activeId);if(evsRef.current)evsRef.current.close();const evs=new EventSource('/api/events/'+sessionId);evsRef.current=evs;evs.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==='receive'&&d.manifest_id===activeId){setReceived(prev=>({...prev,[d.item_num]:d.qty}));setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}if(d.type==='sale'&&d.manifest_id===activeId){setSalesLog(prev=>[d,...prev]);setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}}catch{}};return()=>{evs.close();};},[activeId,sessionId]);
   useEffect(()=>{LS.set('pos_upc_map',upcMap);},[upcMap]);
+  useEffect(()=>{
+    if(!sessionId)return;
+    loadBarcodes(sessionId);
+  },[sessionId,page,activeId,loadBarcodes]);
+
+
   const onFile=e=>{const file=e.target.files[0];if(!file)return;e.target.value='';Papa.parse(file,{header:true,skipEmptyLines:true,complete:({data})=>{const items=data.map(r=>({itemNum:r['Item #']&&r['Item #'].trim(),description:(r['Item Description']&&r['Item Description'].trim())||'—',qty:parseInt(r['Qty'])||0,unitRetail:parseFloat(r['Unit Retail'])||0,brand:(r['Brand']&&r['Brand'].trim())||(r['Vendor']&&r['Vendor'].trim())||'—'})).filter(i=>i.itemNum);const nm={id:genId(),session_id:sessionId,name:file.name.replace('.csv','').replace(/_/g,' ').substring(0,45),uploadedAt:new Date().toLocaleDateString('en-US'),items};api.post('/api/manifest',nm).catch(console.error);setManifests(p=>[nm,...p]);setActiveId(nm.id);setAppMode('receiving');setPage('recv');}});};
   useEffect(()=>{if((page==='recv'||page==='pos')&&hasBD&&!detRef.current){try{detRef.current=new window.BarcodeDetector({formats:['ean_13','upc_a','upc_e','code_128','code_39','qr_code']});}catch{try{detRef.current=new window.BarcodeDetector();}catch{}}};},[page,hasBD]);
   const startCam=async()=>{setCamError('');try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920}}});streamRef.current=s;if(videoRef.current){videoRef.current.srcObject=s;await videoRef.current.play();}setCameraActive(true);scanningRef.current=true;camLoop();}catch(e){setCamError('Sin acceso: '+e.message);}};
@@ -393,21 +418,56 @@ function App(){
   }
 },[appMode,mMap,stock,cart,activeId,sessionId]);
 
-  const handleScannedBarcode=useCallback(raw=>{
-  raw=raw.toString().trim();
+  const handleScannedBarcode=useCallback(async raw=>{
+  raw=String(raw||'').trim();
   if(!raw)return;
 
-  if(upcMap[raw]){
-    const learnedItem=upcMap[raw];
+  const findLearnedItem=(map,code)=>{
+    if(!map)return '';
 
-    if(mMap[learnedItem]){
-      processCode(learnedItem);
+    if(map[code])return map[code];
+
+    const norm=String(code).replace(/^0+/,'');
+
+    const key=Object.keys(map).find(k=>{
+      return String(k).replace(/^0+/,'')===norm;
+    });
+
+    return key ? map[key] : '';
+  };
+
+  let latestMap=Object.assign({},LS.get('pos_upc_map',{}),upcMap||{});
+  let learnedItem=findLearnedItem(latestMap,raw);
+
+  // Si no lo encuentra localmente, consulta la base de datos antes de pedir Item #
+  if(!learnedItem && sessionId){
+    try{
+      const d=await api.get('/api/barcodes/'+sessionId);
+
+      if(d&&d.map){
+        latestMap=Object.assign({},latestMap,d.map);
+
+        LS.set('pos_upc_map',latestMap);
+        setUpcMap(latestMap);
+
+        learnedItem=findLearnedItem(latestMap,raw);
+      }
+    }catch(e){
+      console.log('Barcode lookup DB error',e.message);
+    }
+  }
+
+  if(learnedItem){
+    const cleanItem=String(learnedItem).trim().replace(/^#/,'');
+
+    if(mMap[cleanItem]){
+      processCode(cleanItem);
       return;
     }
 
     alert(
-      'Este barcode estaba asociado al Item # '+learnedItem+
-      ', pero ese Item # no está en este manifiesto. Ahora puedes escribir el Item # correcto para corregirlo.'
+      'Este barcode está asociado al Item # '+cleanItem+
+      ', pero ese Item # no está en este manifiesto. Verifica el manifiesto o corrige el barcode.'
     );
 
     setUpcPending(raw);
@@ -421,7 +481,7 @@ function App(){
   setUpcInput('');
   stopCam();
   setTimeout(()=>upcRef.current&&upcRef.current.focus(),100);
-},[upcMap,mMap,processCode]);
+},[upcMap,mMap,processCode,sessionId]);
 
   const onScan=useCallback(raw=>{
   raw=raw.toString().trim();
