@@ -2292,8 +2292,11 @@ const removeCartLine=itemNum=>{
       return b;
     };
 
-    if(page==='summary'){
+    if(page==='recv'){
       wrap.appendChild(makeBtn('⬇️ Excel Recibido vs Esperado',C.green+'22',C.green,C.green,downloadReceivedReport));
+    }
+
+    if(page==='summary'){
       wrap.appendChild(makeBtn('⬇️ Excel Ventas de Hoy',C.yellow+'22',C.yellow,C.yellow,downloadSalesToday));
     }
 
@@ -2775,7 +2778,7 @@ const goRecv=()=>{stopCam();setAppMode('receiving');setPage('recv');setLastResul
     const old=document.getElementById('pos-correct-barcode-button');
     if(old)old.remove();
 
-    if(page!=='summary')return;
+    if(page!=='recv')return;
     if(!activeManifest||!sessionId)return;
 
     const btn=document.createElement('button');
