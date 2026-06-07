@@ -5,6 +5,257 @@ const path = require('path');
 
 const app = express();
 
+app.get('/api/recover-sales-page', (req,res)=>{
+  res.type('html').send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Recover Sales - Klou POS</title>
+  <style>
+    body{margin:0;background:#020617;color:#e5e7eb;font-family:Arial, sans-serif;padding:18px}
+    .box{max-width:650px;margin:0 auto;background:#111827;border:2px solid #facc15;border-radius:18px;padding:18px}
+    h1{color:#facc15;font-size:24px;margin:0 0 10px}
+    button{width:100%;padding:14px;border:0;border-radius:12px;font-weight:900;font-size:15px;margin-top:10px}
+    .green{background:#22c55e;color:#00110a}
+    .blue{background:#06b6d4;color:#00111a}
+    .gray{background:#334155;color:#fff}
+    pre{white-space:pre-wrap;background:#020617;border-radius:10px;padding:12px;font-size:12px;max-height:260px;overflow:auto}
+    select,input{width:100%;padding:12px;border-radius:10px;border:1px solid #475569;background:#0f172a;color:#fff;margin:8px 0;font-size:14px}
+    .small{color:#94a3b8;font-size:12px;line-height:1.45}
+    .ok{color:#22c55e;font-weight:800}
+    .warn{color:#facc15;font-weight:800}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>🛟 Recuperar ventas locales</h1>
+    <div class="small">
+      Esta página busca ventas guardadas en el teléfono con <b>pos_sales_</b> y las puede volver a subir a Postgres.
+      No borres caché antes de probar.
+    </div>
+
+    <label>Sesión</label>
+    <input id="sid" value="XJIF9Y">
+
+    <button class="blue" onclick="loadEverything()">1. Buscar ventas y manifiestos</button>
+
+    <div id="summary" style="margin-top:12px"></div>
+
+    <label>Manifiesto destino</label>
+    <select id="manifest"></select>
+
+    <button class="green" onclick="uploadToday()">2. Subir ventas de hoy al manifiesto seleccionado</button>
+    <button class="gray" onclick="uploadAllMatching()">Subir TODAS las ventas locales que coincidan</button>
+
+    <pre id="log">Listo para buscar...</pre>
+  </div>
+
+<script>
+let localSales = [];
+let manifests = [];
+
+function log(msg){
+  document.getElementById('log').textContent += "\\n" + msg;
+}
+
+function resetLog(msg){
+  document.getElementById('log').textContent = msg;
+}
+
+function getLocalSales(){
+  const keys = Object.keys(localStorage).filter(k => k.startsWith('pos_sales_'));
+  const found = [];
+
+  keys.forEach(k=>{
+    try{
+      const arr = JSON.parse(localStorage.getItem(k) || '[]');
+      if(Array.isArray(arr)){
+        arr.forEach(tx => found.push(Object.assign({}, tx, {_sourceKey:k})));
+      }
+    }catch(e){
+      found.push({_badKey:k, _error:e.message});
+    }
+  });
+
+  return {keys, found};
+}
+
+async function loadEverything(){
+  resetLog("Buscando en este teléfono...");
+
+  const sid = document.getElementById('sid').value.trim() || "XJIF9Y";
+
+  const local = getLocalSales();
+  localSales = local.found.filter(x => !x._badKey);
+
+  log("Claves pos_sales_ encontradas: " + local.keys.length);
+  local.keys.forEach(k => {
+    try{
+      const arr = JSON.parse(localStorage.getItem(k) || '[]');
+      log(" - " + k + " = " + (Array.isArray(arr) ? arr.length : 0) + " ventas");
+    }catch(e){
+      log(" - " + k + " = error");
+    }
+  });
+
+  log("Ventas locales totales encontradas: " + localSales.length);
+
+  const r = await fetch('/api/manifests/' + encodeURIComponent(sid));
+  manifests = await r.json();
+
+  const sel = document.getElementById('manifest');
+  sel.innerHTML = '';
+
+  manifests.forEach(m=>{
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = (m.name || m.id) + " | " + ((m.items||[]).length) + " items";
+    sel.appendChild(opt);
+  });
+
+  document.getElementById('summary').innerHTML =
+    '<p class="ok">Ventas locales: ' + localSales.length + '</p>' +
+    '<p class="warn">Manifiestos en sesión ' + sid + ': ' + manifests.length + '</p>';
+
+  log("Manifiestos cargados: " + manifests.length);
+}
+
+function selectedManifest(){
+  const id = document.getElementById('manifest').value;
+  return manifests.find(m => m.id === id);
+}
+
+function manifestItemSet(m){
+  const set = new Set();
+  (m.items || []).forEach(i => {
+    if(i.itemNum) set.add(String(i.itemNum).trim());
+  });
+  return set;
+}
+
+function cleanTx(tx, manifestId){
+  const itemNum = String(tx.item_num || tx.itemNum || '').trim();
+  const now = new Date().toISOString();
+  const saleDateTime = tx.sale_datetime || tx.created_at || now;
+  const saleDate = tx.sale_date || String(saleDateTime).slice(0,10);
+  const saleTime = tx.sale_time || tx.time || new Date(saleDateTime).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+
+  return {
+    id: tx.id || (Math.random().toString(36).slice(2) + Date.now().toString(36)),
+    item_num: itemNum,
+    barcode: tx.barcode || '',
+    description: tx.description || '',
+    brand: tx.brand || '',
+    price: Number(tx.price) || 0,
+    pay_method: tx.pay_method || tx.payMethod || 'cash',
+    sale_time: saleTime,
+    sale_date: saleDate,
+    sale_datetime: saleDateTime,
+    manifest_id: manifestId,
+    created_at: tx.created_at || saleDateTime
+  };
+}
+
+async function uploadList(list){
+  const sid = document.getElementById('sid').value.trim() || "XJIF9Y";
+  const m = selectedManifest();
+
+  if(!m){
+    alert("No hay manifiesto seleccionado.");
+    return;
+  }
+
+  if(list.length === 0){
+    alert("No encontré ventas para subir.");
+    return;
+  }
+
+  const ok = confirm("Voy a subir " + list.length + " ventas al manifiesto:\\n\\n" + (m.name || m.id) + "\\n\\n¿Continuar?");
+  if(!ok) return;
+
+  resetLog("Subiendo " + list.length + " ventas...");
+
+  let uploaded = 0;
+  for(const tx0 of list){
+    const tx = cleanTx(tx0, m.id);
+
+    const res = await fetch('/api/sale', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        id: tx.id,
+        session_id: sid,
+        manifest_id: m.id,
+        item_num: tx.item_num,
+        barcode: tx.barcode,
+        description: tx.description,
+        brand: tx.brand,
+        price: tx.price,
+        pay_method: tx.pay_method,
+        sale_time: tx.sale_time,
+        sale_date: tx.sale_date,
+        sale_datetime: tx.sale_datetime
+      })
+    });
+
+    if(!res.ok){
+      log("Error subiendo item " + tx.item_num + ": HTTP " + res.status);
+    }else{
+      uploaded++;
+    }
+  }
+
+  log("LISTO. Ventas subidas: " + uploaded);
+  alert("Listo. Ventas subidas: " + uploaded);
+}
+
+function uploadToday(){
+  const m = selectedManifest();
+  if(!m){
+    alert("Primero busca y selecciona un manifiesto.");
+    return;
+  }
+
+  const set = manifestItemSet(m);
+  const today = new Date().toISOString().slice(0,10);
+
+  const list = localSales.filter(tx=>{
+    const itemNum = String(tx.item_num || tx.itemNum || '').trim();
+    const d = String(tx.sale_date || tx.sale_datetime || tx.created_at || '').slice(0,10);
+    return set.has(itemNum) && d === today;
+  });
+
+  uploadList(list);
+}
+
+function uploadAllMatching(){
+  const m = selectedManifest();
+  if(!m){
+    alert("Primero busca y selecciona un manifiesto.");
+    return;
+  }
+
+  const set = manifestItemSet(m);
+
+  const list = localSales.filter(tx=>{
+    const itemNum = String(tx.item_num || tx.itemNum || '').trim();
+    return set.has(itemNum);
+  });
+
+  uploadList(list);
+}
+
+window.addEventListener('load', ()=>{
+  setTimeout(loadEverything, 500);
+});
+</script>
+</body>
+</html>`);
+});
+
+
+
 app.get('/api/debug/all-sales', async(req,res)=>{
   try{
     const key=req.query.key;
