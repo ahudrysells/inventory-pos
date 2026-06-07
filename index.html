@@ -934,6 +934,70 @@ const onManual=e=>{
   },[activeManifest,activeId,salesLog]);
 
 
+
+
+  const forceSalesRecoveryPanelOnNormalApp=()=>{
+    try{
+      const old=document.getElementById('force-sales-recovery-panel');
+      if(old)old.remove();
+
+      const keys=Object.keys(localStorage).filter(k=>k.startsWith('pos_sales_'));
+      let total=0;
+      let lines=[];
+
+      keys.forEach(k=>{
+        try{
+          const arr=JSON.parse(localStorage.getItem(k)||'[]');
+          const count=Array.isArray(arr)?arr.length:0;
+          total+=count;
+          lines.push(k+' = '+count+' ventas');
+        }catch(e){
+          lines.push(k+' = error leyendo');
+        }
+      });
+
+      const panel=document.createElement('div');
+      panel.id='force-sales-recovery-panel';
+      panel.style.position='fixed';
+      panel.style.inset='0';
+      panel.style.zIndex='2147483647';
+      panel.style.background='rgba(0,0,0,.96)';
+      panel.style.color='white';
+      panel.style.padding='20px';
+      panel.style.fontFamily='monospace';
+      panel.style.overflow='auto';
+
+      panel.innerHTML=
+        '<div style="max-width:560px;margin:35px auto;background:#111827;border:3px solid #facc15;border-radius:18px;padding:20px">'+
+        '<div style="font-size:24px;font-weight:900;color:#facc15;margin-bottom:12px">🛟 Recuperación de ventas</div>'+
+        '<div style="font-size:16px;margin-bottom:10px">Ventas locales encontradas en ESTA app: <b style="color:#22c55e">'+total+'</b></div>'+
+        '<div style="font-size:12px;color:#94a3b8;margin-bottom:12px">Sesión: '+sessionId+'<br>Manifiesto abierto: '+(activeManifest?(activeManifest.name||activeId):'Ninguno abierto')+'</div>'+
+        '<pre style="white-space:pre-wrap;background:#020617;padding:12px;border-radius:10px;font-size:12px;max-height:220px;overflow:auto">'+
+        (lines.length?lines.join('\\n'):'No encontré claves pos_sales_ en esta app.')+
+        '</pre>'+
+        '<button id="force-recover-sales-btn" style="width:100%;margin-top:14px;padding:15px;border:0;border-radius:12px;background:#22c55e;color:#00110a;font-weight:900;font-size:15px">Subir ventas al manifiesto abierto</button>'+
+        '<button id="force-close-recovery-btn" style="width:100%;margin-top:10px;padding:13px;border:1px solid #64748b;border-radius:12px;background:#334155;color:white;font-weight:800;font-size:14px">Cerrar</button>'+
+        '</div>';
+
+      document.body.appendChild(panel);
+
+      document.getElementById('force-close-recovery-btn').onclick=()=>panel.remove();
+      document.getElementById('force-recover-sales-btn').onclick=()=>recoverLocalSalesFromPhone();
+
+    }catch(e){
+      alert('Error abriendo recuperación: '+e.message);
+    }
+  };
+
+  useEffect(()=>{
+    const timer=setTimeout(()=>{
+      forceSalesRecoveryPanelOnNormalApp();
+    },1800);
+
+    return()=>clearTimeout(timer);
+  },[]);
+
+
 const recoverLocalSalesFromPhone=async()=>{
     try{
       if(!activeId||!activeManifest){
