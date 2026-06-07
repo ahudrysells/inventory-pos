@@ -836,103 +836,381 @@ const onManual=e=>{
 
   
 
-  
-  
-  const deleteSaleMistake=async(tx)=>{
-    if(!tx)return;
-
-    const itemNum=String(tx.item_num||tx.itemNum||'');
-    const saleId=String(tx.id||'');
-
-    const ok=confirm(
-      '¿Borrar esta venta por equivocación?\n\n'+
-      'Item # '+itemNum+'\n'+
-      (tx.description||'')+'\n'+
-      'Precio: $'+Number(tx.price||0).toFixed(2)+'\n\n'+
-      'Esto la quitará de ventas y devolverá el stock.'
-    );
-
-    if(!ok)return;
-
-    let removed=false;
-
-    const newSales=salesLog.filter(t=>{
-      if(removed)return true;
-
-      const sameById=saleId && String(t.id||'')===saleId;
-      const sameFallback=!saleId &&
-        String(t.item_num||t.itemNum||'')===itemNum &&
-        String(t.sale_datetime||t.created_at||t.sale_time||'')===String(tx.sale_datetime||tx.created_at||tx.sale_time||'');
-
-      if(sameById||sameFallback){
-        removed=true;
-        return false;
-      }
-
-      return true;
-    });
-
-    setSalesLog(newSales);
-    LS.set('pos_sales_'+activeId,newSales);
-
+  const showSalesRecoveryPanel=()=>{
     try{
-      if(saleId){
-        const r=await fetch('/api/sale/'+encodeURIComponent(sessionId)+'/'+encodeURIComponent(saleId),{
-          method:'DELETE'
-        });
+      const keys=Object.keys(localStorage).filter(k=>k.startsWith('pos_sales_'));
+      let total=0;
+      let lines=[];
 
-        if(!r.ok){
-          throw new Error('No se pudo borrar en servidor');
+      keys.forEach(k=>{
+        try{
+          const arr=JSON.parse(localStorage.getItem(k)||'[]');
+          if(Array.isArray(arr)){
+            total+=arr.length;
+            lines.push(k+' = '+arr.length+' ventas');
+          }
+        }catch{
+          lines.push(k+' = error leyendo');
         }
-      }
+      });
 
-      setSyncDot('ok');
-      setTimeout(()=>setSyncDot(''),1500);
-      setLastResult(Object.assign({},tx,{status:'deleted'}));
+      const old=document.getElementById('sales-recovery-panel');
+      if(old)old.remove();
+
+      const panel=document.createElement('div');
+      panel.id='sales-recovery-panel';
+      panel.style.position='fixed';
+      panel.style.inset='0';
+      panel.style.zIndex='2147483647';
+      panel.style.background='rgba(0,0,0,.94)';
+      panel.style.color='#fff';
+      panel.style.padding='22px';
+      panel.style.fontFamily='monospace';
+      panel.style.overflow='auto';
+
+      const box=document.createElement('div');
+      box.style.maxWidth='520px';
+      box.style.margin='40px auto';
+      box.style.background='#111827';
+      box.style.border='2px solid #facc15';
+      box.style.borderRadius='18px';
+      box.style.padding='20px';
+
+      box.innerHTML =
+        '<div style="font-size:22px;font-weight:900;color:#facc15;margin-bottom:12px">🛟 Recuperar ventas locales</div>' +
+        '<div style="font-size:15px;margin-bottom:10px">Ventas locales encontradas: <b style="color:#22c55e">'+total+'</b></div>' +
+        '<div style="font-size:12px;color:#94a3b8;margin-bottom:12px">Sesión actual: '+sessionId+'<br>Manifiesto abierto: '+(activeManifest?(activeManifest.name||activeId):'NINGUNO')+'</div>' +
+        '<pre style="white-space:pre-wrap;background:#020617;border-radius:10px;padding:12px;color:#e5e7eb;font-size:12px;max-height:220px;overflow:auto">'+
+        (lines.length?lines.join('\n'):'No encontré claves pos_sales_ en este teléfono.')+
+        '</pre>';
+
+      const recoverBtn=document.createElement('button');
+      recoverBtn.textContent='Subir ventas al manifiesto abierto';
+      recoverBtn.style.width='100%';
+      recoverBtn.style.marginTop='14px';
+      recoverBtn.style.padding='14px';
+      recoverBtn.style.borderRadius='12px';
+      recoverBtn.style.border='0';
+      recoverBtn.style.background='#22c55e';
+      recoverBtn.style.color='#00110a';
+      recoverBtn.style.fontWeight='900';
+      recoverBtn.style.fontSize='14px';
+      recoverBtn.onclick=async()=>{
+        await recoverLocalSalesFromPhone();
+        setTimeout(showSalesRecoveryPanel,800);
+      };
+
+      const closeBtn=document.createElement('button');
+      closeBtn.textContent='Cerrar';
+      closeBtn.style.width='100%';
+      closeBtn.style.marginTop='10px';
+      closeBtn.style.padding='12px';
+      closeBtn.style.borderRadius='12px';
+      closeBtn.style.border='1px solid #64748b';
+      closeBtn.style.background='#1e293b';
+      closeBtn.style.color='#fff';
+      closeBtn.style.fontWeight='800';
+      closeBtn.onclick=()=>panel.remove();
+
+      box.appendChild(recoverBtn);
+      box.appendChild(closeBtn);
+      panel.appendChild(box);
+      document.body.appendChild(panel);
     }catch(e){
-      setSyncDot('err');
-      alert('La quité de esta pantalla, pero no pude confirmar el borrado en la base de datos: '+e.message);
+      alert('Error mostrando recuperación: '+e.message);
     }
   };
 
   useEffect(()=>{
-    const old=document.getElementById('pos-sale-mistake-btn');
+    try{
+      const params=new URLSearchParams(window.location.search);
+
+      if(params.get('recoverSales')==='1'){
+        setTimeout(showSalesRecoveryPanel,1200);
+      }
+    }catch(e){
+      console.log('Recovery panel error',e.message);
+    }
+  },[activeManifest,activeId,salesLog]);
+
+
+
+
+  const forceSalesRecoveryPanelOnNormalApp=()=>{
+    try{
+      const old=document.getElementById('force-sales-recovery-panel');
+      if(old)old.remove();
+
+      const keys=Object.keys(localStorage).filter(k=>k.startsWith('pos_sales_'));
+      let total=0;
+      let lines=[];
+
+      keys.forEach(k=>{
+        try{
+          const arr=JSON.parse(localStorage.getItem(k)||'[]');
+          const count=Array.isArray(arr)?arr.length:0;
+          total+=count;
+          lines.push(k+' = '+count+' ventas');
+        }catch(e){
+          lines.push(k+' = error leyendo');
+        }
+      });
+
+      const panel=document.createElement('div');
+      panel.id='force-sales-recovery-panel';
+      panel.style.position='fixed';
+      panel.style.inset='0';
+      panel.style.zIndex='2147483647';
+      panel.style.background='rgba(0,0,0,.96)';
+      panel.style.color='white';
+      panel.style.padding='20px';
+      panel.style.fontFamily='monospace';
+      panel.style.overflow='auto';
+
+      panel.innerHTML=
+        '<div style="max-width:560px;margin:35px auto;background:#111827;border:3px solid #facc15;border-radius:18px;padding:20px">'+
+        '<div style="font-size:24px;font-weight:900;color:#facc15;margin-bottom:12px">🛟 Recuperación de ventas</div>'+
+        '<div style="font-size:16px;margin-bottom:10px">Ventas locales encontradas en ESTA app: <b style="color:#22c55e">'+total+'</b></div>'+
+        '<div style="font-size:12px;color:#94a3b8;margin-bottom:12px">Sesión: '+sessionId+'<br>Manifiesto abierto: '+(activeManifest?(activeManifest.name||activeId):'Ninguno abierto')+'</div>'+
+        '<pre style="white-space:pre-wrap;background:#020617;padding:12px;border-radius:10px;font-size:12px;max-height:220px;overflow:auto">'+
+        (lines.length?lines.join('\\n'):'No encontré claves pos_sales_ en esta app.')+
+        '</pre>'+
+        '<button id="force-recover-sales-btn" style="width:100%;margin-top:14px;padding:15px;border:0;border-radius:12px;background:#22c55e;color:#00110a;font-weight:900;font-size:15px">Subir ventas al manifiesto abierto</button>'+
+        '<button id="force-close-recovery-btn" style="width:100%;margin-top:10px;padding:13px;border:1px solid #64748b;border-radius:12px;background:#334155;color:white;font-weight:800;font-size:14px">Cerrar</button>'+
+        '</div>';
+
+      document.body.appendChild(panel);
+
+      document.getElementById('force-close-recovery-btn').onclick=()=>panel.remove();
+      document.getElementById('force-recover-sales-btn').onclick=()=>recoverLocalSalesFromPhone();
+
+    }catch(e){
+      alert('Error abriendo recuperación: '+e.message);
+    }
+  };
+
+  useEffect(()=>{
+    const timer=setTimeout(()=>{
+      forceSalesRecoveryPanelOnNormalApp();
+    },1800);
+
+    return()=>clearTimeout(timer);
+  },[]);
+
+
+const recoverLocalSalesFromPhone=async()=>{
+    try{
+      if(!activeId||!activeManifest){
+        alert('Primero abre el manifiesto donde quieres recuperar las ventas.');
+        return;
+      }
+
+      const keys=Object.keys(localStorage).filter(k=>k.startsWith('pos_sales_'));
+      let found=[];
+
+      keys.forEach(k=>{
+        try{
+          const arr=JSON.parse(localStorage.getItem(k)||'[]');
+          if(Array.isArray(arr)){
+            arr.forEach(tx=>{
+              found.push(Object.assign({},tx,{_sourceKey:k}));
+            });
+          }
+        }catch{}
+      });
+
+      if(found.length===0){
+        alert('No encontré ventas locales guardadas en este teléfono.');
+        return;
+      }
+
+      const today=new Date().toISOString().slice(0,10);
+
+      let candidates=found.filter(tx=>{
+        const itemNum=String(tx.item_num||tx.itemNum||'').trim();
+        if(!itemNum)return false;
+        if(!mMap[itemNum])return false;
+
+        const d=String(tx.sale_date||tx.sale_datetime||tx.created_at||'').slice(0,10);
+        return d===today;
+      });
+
+      if(candidates.length===0){
+        const allForManifest=found.filter(tx=>{
+          const itemNum=String(tx.item_num||tx.itemNum||'').trim();
+          return itemNum && mMap[itemNum];
+        });
+
+        if(allForManifest.length===0){
+          alert(
+            'Encontré '+found.length+' ventas locales, pero ninguna coincide con los items de este manifiesto.'
+          );
+          return;
+        }
+
+        const okAll=confirm(
+          'No encontré ventas locales de HOY para este manifiesto, pero sí encontré '+
+          allForManifest.length+
+          ' ventas locales que coinciden con este manifiesto. ¿Quieres recuperarlas?'
+        );
+
+        if(!okAll)return;
+        candidates=allForManifest;
+      }
+
+      const existing=new Set(
+        salesLog.map(t=>{
+          return String(t.id||'')+'|'+String(t.item_num||t.itemNum||'')+'|'+String(t.sale_datetime||t.created_at||t.sale_time||'');
+        })
+      );
+
+      const txs=[];
+
+      candidates.forEach(tx=>{
+        const itemNum=String(tx.item_num||tx.itemNum||'').trim();
+        const item=mMap[itemNum];
+        if(!item)return;
+
+        const saleDate=String(tx.sale_date||tx.sale_datetime||tx.created_at||new Date().toISOString()).slice(0,10);
+        const saleDateTime=tx.sale_datetime||tx.created_at||new Date().toISOString();
+        const saleTime=tx.sale_time||tx.time||new Date(saleDateTime).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        const id=tx.id||genId();
+
+        const clean={
+          id,
+          item_num:itemNum,
+          itemNum:itemNum,
+          barcode:tx.barcode||'',
+          description:tx.description||item.description||'',
+          brand:tx.brand||item.brand||'',
+          price:Number(tx.price)||0,
+          pay_method:tx.pay_method||tx.payMethod||'cash',
+          payMethod:tx.pay_method||tx.payMethod||'cash',
+          sale_time:saleTime,
+          time:saleTime,
+          sale_date:saleDate,
+          sale_datetime:saleDateTime,
+          manifest_id:activeId,
+          created_at:tx.created_at||saleDateTime
+        };
+
+        const key=String(clean.id)+'|'+String(clean.item_num)+'|'+String(clean.sale_datetime||clean.created_at||clean.sale_time);
+
+        if(!existing.has(key)){
+          existing.add(key);
+          txs.push(clean);
+        }
+      });
+
+      if(txs.length===0){
+        alert('Las ventas locales encontradas ya parecen estar cargadas en esta pantalla.');
+        return;
+      }
+
+      const ok=confirm(
+        'Encontré '+txs.length+' ventas locales para recuperar.\\n\\n'+
+        'Se van a subir al manifiesto abierto ahora.\\n\\n'+
+        '¿Continuar?'
+      );
+
+      if(!ok)return;
+
+      let uploaded=0;
+
+      for(const tx of txs){
+        await api.post('/api/sale',{
+          id:tx.id,
+          session_id:sessionId,
+          manifest_id:activeId,
+          item_num:tx.item_num,
+          barcode:tx.barcode||'',
+          description:tx.description||'',
+          brand:tx.brand||'',
+          price:tx.price,
+          pay_method:tx.pay_method,
+          sale_time:tx.sale_time,
+          sale_date:tx.sale_date,
+          sale_datetime:tx.sale_datetime
+        });
+        uploaded++;
+      }
+
+      const newSales=[...txs,...salesLog];
+      setSalesLog(newSales);
+      LS.set('pos_sales_'+activeId,newSales);
+
+      setSyncDot('ok');
+      setTimeout(()=>setSyncDot(''),1500);
+
+      alert('Listo. Recuperé '+uploaded+' ventas locales.');
+    }catch(e){
+      console.error(e);
+      setSyncDot('err');
+      alert('No pude recuperar ventas locales: '+e.message);
+    }
+  };
+
+  
+  useEffect(()=>{
+    try{
+      const params=new URLSearchParams(window.location.search);
+
+      if(params.get('recoverSales')!=='1')return;
+      if(!activeManifest||!activeId)return;
+
+      const key='recover_sales_auto_ran_'+activeId;
+
+      if(sessionStorage.getItem(key))return;
+
+      sessionStorage.setItem(key,'1');
+
+      setTimeout(()=>{
+        recoverLocalSalesFromPhone();
+      },1000);
+    }catch(e){
+      console.log('Auto recover sales error',e.message);
+    }
+  },[activeManifest,activeId,salesLog]);
+
+
+useEffect(()=>{
+    const old=document.getElementById('pos-recover-local-sales');
     if(old)old.remove();
 
-    const inSales=(page==='sales'||page==='venta'||appMode==='sales');
-
-    if(!inSales||!activeManifest||!salesLog.length)return;
-
-    const tx=salesLog[0];
+    if(!activeManifest)return;
 
     const btn=document.createElement('button');
-    btn.id='pos-sale-mistake-btn';
-    btn.textContent='↩️ Equivocación';
+    btn.id='pos-recover-local-sales';
+    btn.textContent='🛟 Recuperar ventas';
     btn.style.position='fixed';
     btn.style.right='12px';
     btn.style.top='92px';
+    btn.style.transform='none';
     btn.style.zIndex='2147483647';
-    btn.style.background=C.red+'22';
-    btn.style.border='1px solid '+C.red;
-    btn.style.color=C.red;
+    btn.style.background=C.yellow+'22';
+    btn.style.border='1px solid '+C.yellow;
+    btn.style.color=C.yellow;
     btn.style.borderRadius='999px';
-    btn.style.padding='9px 12px';
+    btn.style.padding='10px 14px';
     btn.style.fontFamily='monospace';
-    btn.style.fontWeight='900';
-    btn.style.fontSize='11px';
+    btn.style.fontWeight='800';
+    btn.style.fontSize='12px';
     btn.style.cursor='pointer';
     btn.style.boxShadow='0 8px 24px rgba(0,0,0,.45)';
-    btn.onclick=()=>deleteSaleMistake(tx);
+    btn.onclick=recoverLocalSalesFromPhone;
 
     document.body.appendChild(btn);
 
     return()=>{
-      const el=document.getElementById('pos-sale-mistake-btn');
+      const el=document.getElementById('pos-recover-local-sales');
       if(el)el.remove();
     };
-  },[page,appMode,activeManifest,activeId,salesLog]);
+  },[activeManifest,activeId,salesLog,mMap]);
 
-  
+const newSales=[tx,...salesLog];setSalesLog(newSales);setLastResult(Object.assign({},item,{status:'sold',price,payMethod}));setPendingSale(null);setSalePrice('');pulse('ok');LS.set('pos_sales_'+activeId,newSales);api.post('/api/sale',{id,session_id:sessionId,manifest_id:activeId,item_num:item.itemNum,barcode,description:item.description,brand:item.brand,price,pay_method:payMethod,sale_time:time,sale_date,sale_datetime}).then(()=>{setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}).catch(()=>setSyncDot('err'));setTimeout(()=>manualRef.current&&manualRef.current.focus(),100);};
+  const totalExp=activeManifest&&activeManifest.items?activeManifest.items.reduce((s,i)=>s+i.qty,0):0;
+  const totalRcv=Object.values(received).reduce((s,v)=>s+v,0);
+  const pct=totalExp>0?Math.round(totalRcv/totalExp*100):0;
   const salesByPay={cash:0,card:0,whatnot:0,gift:0};const cntByPay={cash:0,card:0,whatnot:0,gift:0};
   salesLog.forEach(t=>{const pm=t.pay_method||t.payMethod;if(salesByPay[pm]!==undefined){salesByPay[pm]+=Number(t.price);cntByPay[pm]+=1;}});
   const totalSales=salesLog.reduce((s,t)=>s+Number(t.price),0);
