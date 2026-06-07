@@ -104,6 +104,27 @@ app.post('/api/manifest', async (req, res) => {
   }
 });
 
+app.get('/api/debug/all-manifests', async(req,res)=>{
+  try{
+    const key=req.query.key;
+
+    if(key!=='lu-find-manifests'){
+      return res.status(403).json({error:'Forbidden'});
+    }
+
+    const r=await pool.query(
+      `SELECT session_id, id, name, jsonb_array_length(items) AS item_count, created_at
+       FROM pos_manifests
+       ORDER BY created_at DESC
+       LIMIT 50`
+    );
+
+    res.json(r.rows);
+  }catch(e){
+    res.status(500).json({error:e.message});
+  }
+});
+
 app.get('/api/manifests/:sid', async (req, res) => {
   try {
     const r = await pool.query(
