@@ -5,6 +5,27 @@ const path = require('path');
 
 const app = express();
 
+app.delete('/api/sale/:sid/:id', async(req,res)=>{
+  try{
+    const {sid,id}=req.params;
+
+    if(!sid || !id){
+      return res.status(400).json({error:'Missing session or sale id'});
+    }
+
+    const r = await pool.query(
+      'DELETE FROM pos_sales WHERE session_id=$1 AND id=$2 RETURNING id',
+      [sid,id]
+    );
+
+    res.json({ok:true,deleted:r.rowCount});
+  }catch(e){
+    res.status(500).json({error:e.message});
+  }
+});
+
+
+
 app.get('/api/recover-sales-page', (req,res)=>{
   res.type('html').send(`<!DOCTYPE html>
 <html>
