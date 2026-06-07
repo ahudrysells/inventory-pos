@@ -986,7 +986,30 @@ const onManual=e=>{
     }
   };
 
+  
   useEffect(()=>{
+    try{
+      const params=new URLSearchParams(window.location.search);
+
+      if(params.get('recoverSales')!=='1')return;
+      if(!activeManifest||!activeId)return;
+
+      const key='recover_sales_auto_ran_'+activeId;
+
+      if(sessionStorage.getItem(key))return;
+
+      sessionStorage.setItem(key,'1');
+
+      setTimeout(()=>{
+        recoverLocalSalesFromPhone();
+      },1000);
+    }catch(e){
+      console.log('Auto recover sales error',e.message);
+    }
+  },[activeManifest,activeId,salesLog]);
+
+
+useEffect(()=>{
     const old=document.getElementById('pos-recover-local-sales');
     if(old)old.remove();
 
