@@ -834,7 +834,107 @@ const onManual=e=>{
 
   const confirmSale=async payMethod=>{if(!pendingSale)return;const{item}=pendingSale;const barcode=pendingSale.barcode||'';const price=payMethod==='gift'?0:(parseFloat(salePrice)||0);const now=new Date();const time=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});const sale_date=now.toISOString().slice(0,10);const sale_datetime=now.toISOString();const id=genId();const tx={id,item_num:item.itemNum,itemNum:item.itemNum,barcode,description:item.description,brand:item.brand,price,pay_method:payMethod,payMethod,sale_time:time,time,sale_date,sale_datetime,manifest_id:activeId,created_at:new Date().toISOString()};
 
-  const recoverLocalSalesFromPhone=async()=>{
+  
+
+  const showSalesRecoveryPanel=()=>{
+    try{
+      const keys=Object.keys(localStorage).filter(k=>k.startsWith('pos_sales_'));
+      let total=0;
+      let lines=[];
+
+      keys.forEach(k=>{
+        try{
+          const arr=JSON.parse(localStorage.getItem(k)||'[]');
+          if(Array.isArray(arr)){
+            total+=arr.length;
+            lines.push(k+' = '+arr.length+' ventas');
+          }
+        }catch{
+          lines.push(k+' = error leyendo');
+        }
+      });
+
+      const old=document.getElementById('sales-recovery-panel');
+      if(old)old.remove();
+
+      const panel=document.createElement('div');
+      panel.id='sales-recovery-panel';
+      panel.style.position='fixed';
+      panel.style.inset='0';
+      panel.style.zIndex='2147483647';
+      panel.style.background='rgba(0,0,0,.94)';
+      panel.style.color='#fff';
+      panel.style.padding='22px';
+      panel.style.fontFamily='monospace';
+      panel.style.overflow='auto';
+
+      const box=document.createElement('div');
+      box.style.maxWidth='520px';
+      box.style.margin='40px auto';
+      box.style.background='#111827';
+      box.style.border='2px solid #facc15';
+      box.style.borderRadius='18px';
+      box.style.padding='20px';
+
+      box.innerHTML =
+        '<div style="font-size:22px;font-weight:900;color:#facc15;margin-bottom:12px">🛟 Recuperar ventas locales</div>' +
+        '<div style="font-size:15px;margin-bottom:10px">Ventas locales encontradas: <b style="color:#22c55e">'+total+'</b></div>' +
+        '<div style="font-size:12px;color:#94a3b8;margin-bottom:12px">Sesión actual: '+sessionId+'<br>Manifiesto abierto: '+(activeManifest?(activeManifest.name||activeId):'NINGUNO')+'</div>' +
+        '<pre style="white-space:pre-wrap;background:#020617;border-radius:10px;padding:12px;color:#e5e7eb;font-size:12px;max-height:220px;overflow:auto">'+
+        (lines.length?lines.join('\n'):'No encontré claves pos_sales_ en este teléfono.')+
+        '</pre>';
+
+      const recoverBtn=document.createElement('button');
+      recoverBtn.textContent='Subir ventas al manifiesto abierto';
+      recoverBtn.style.width='100%';
+      recoverBtn.style.marginTop='14px';
+      recoverBtn.style.padding='14px';
+      recoverBtn.style.borderRadius='12px';
+      recoverBtn.style.border='0';
+      recoverBtn.style.background='#22c55e';
+      recoverBtn.style.color='#00110a';
+      recoverBtn.style.fontWeight='900';
+      recoverBtn.style.fontSize='14px';
+      recoverBtn.onclick=async()=>{
+        await recoverLocalSalesFromPhone();
+        setTimeout(showSalesRecoveryPanel,800);
+      };
+
+      const closeBtn=document.createElement('button');
+      closeBtn.textContent='Cerrar';
+      closeBtn.style.width='100%';
+      closeBtn.style.marginTop='10px';
+      closeBtn.style.padding='12px';
+      closeBtn.style.borderRadius='12px';
+      closeBtn.style.border='1px solid #64748b';
+      closeBtn.style.background='#1e293b';
+      closeBtn.style.color='#fff';
+      closeBtn.style.fontWeight='800';
+      closeBtn.onclick=()=>panel.remove();
+
+      box.appendChild(recoverBtn);
+      box.appendChild(closeBtn);
+      panel.appendChild(box);
+      document.body.appendChild(panel);
+    }catch(e){
+      alert('Error mostrando recuperación: '+e.message);
+    }
+  };
+
+  useEffect(()=>{
+    try{
+      const params=new URLSearchParams(window.location.search);
+
+      if(params.get('recoverSales')==='1'){
+        setTimeout(showSalesRecoveryPanel,1200);
+      }
+    }catch(e){
+      console.log('Recovery panel error',e.message);
+    }
+  },[activeManifest,activeId,salesLog]);
+
+
+const recoverLocalSalesFromPhone=async()=>{
     try{
       if(!activeId||!activeManifest){
         alert('Primero abre el manifiesto donde quieres recuperar las ventas.');
