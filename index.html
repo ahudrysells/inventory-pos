@@ -143,6 +143,40 @@ function App(){
 
   const loadManifests=useCallback(async sid=>{try{const d=await api.get('/api/manifests/'+sid);if(Array.isArray(d))setManifests(d.map(m=>({...m,items:m.items||[]})));}catch(e){console.error(e);}},[]);
   const loadBarcodes=useCallback(async sid=>{try{const d=await api.get('/api/barcodes/'+sid);if(d&&d.map)setUpcMap(prev=>Object.assign({},prev,d.map));}catch(e){console.error(e);}},[]);
+
+  const syncLocalBarcodesToDB=useCallback(async sid=>{
+    if(!sid)return;
+
+    const localMap=LS.get('pos_upc_map',{}) || {};
+    const entries=Object.entries(localMap).filter(([barcode,itemNum])=>{
+      return String(barcode||'').trim() && String(itemNum||'').trim();
+    });
+
+    if(entries.length===0)return;
+
+    try{
+      for(const [barcode,itemNum] of entries){
+        await api.post('/api/barcode',{
+          session_id:sid,
+          barcode:String(barcode).trim(),
+          item_num:String(itemNum).trim()
+        });
+      }
+
+      console.log('Local learned barcodes synced to DB:',entries.length);
+    }catch(e){
+      console.log('Barcode sync error:',e.message);
+    }
+  },[]);
+
+  useEffect(()=>{
+    if(!sessionId)return;
+
+    loadBarcodes(sessionId);
+    syncLocalBarcodesToDB(sessionId);
+  },[sessionId,loadBarcodes,syncLocalBarcodesToDB]);
+
+
   useEffect(()=>{if(sessionId){loadManifests(sessionId);loadBarcodes(sessionId);}},[sessionId]);
   const loadData=useCallback(async mId=>{
     if(!mId||!sessionId)return;

@@ -61,6 +61,19 @@ pool.query(`
 .then(() => console.log('Damaged table ready'))
 .catch(err => console.error('Damaged table error:', err.message));
 
+
+pool.query(`
+  CREATE TABLE IF NOT EXISTS pos_barcodes (
+    session_id TEXT,
+    barcode TEXT,
+    item_num TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (session_id, barcode)
+  );
+`)
+.then(() => console.log('Barcode table ready'))
+.catch(err => console.error('Barcode table error:', err.message));
+
 const clients = {};
 
 function notify(sid, data) {
@@ -99,6 +112,59 @@ app.get('/api/manifests/:sid', async (req, res) => {
     );
 
     res.json(r.rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/barcodes/:sid', async (req, res) => {
+  try {
+    const { sid } = req.params;
+
+    const r = await pool.query(
+      'SELECT barcode, item_num FROM pos_barcodes WHERE session_id = $1',
+      [sid]
+    );
+
+    const map = {};
+
+    r.rows.forEach(row => {
+      if (row.barcode && row.item_num) {
+        map[String(row.barcode).trim()] = String(row.item_num).trim();
+      }
+    });
+
+    res.json({
+      ok: true,
+      map,
+      rows: r.rows
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/barcode', async (req, res) => {
+  try {
+    const { session_id, barcode, item_num } = req.body;
+
+    const cleanSession = String(session_id || '').trim();
+    const cleanBarcode = String(barcode || '').trim();
+    const cleanItem = String(item_num || '').trim();
+
+    if (!cleanSession || !cleanBarcode || !cleanItem) {
+      return res.status(400).json({ error: 'Missing session_id, barcode, or item_num' });
+    }
+
+    await pool.query(
+      `INSERT INTO pos_barcodes (session_id, barcode, item_num, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (session_id, barcode)
+       DO UPDATE SET item_num = $3, updated_at = NOW()`,
+      [cleanSession, cleanBarcode, cleanItem]
+    );
+
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
