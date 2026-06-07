@@ -5,10 +5,6 @@ const path = require('path');
 
 const app = express();
 
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-
-
 app.get('/api/debug/all-sales', async(req,res)=>{
   try{
     const key=req.query.key;
@@ -34,6 +30,9 @@ app.get('/api/debug/all-sales', async(req,res)=>{
 });
 
 
+
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(__dirname));
 
 const pool = new Pool({
