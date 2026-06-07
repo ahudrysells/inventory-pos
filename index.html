@@ -1481,7 +1481,62 @@ const newSales=[tx,...salesLog];setSalesLog(newSales);setLastResult(Object.assig
     setCheckoutOpen(true);
   };
 
-  const removeCartLine=itemNum=>{
+  
+  const editCartLinePrice=itemNum=>{
+    const line=cart.find(l=>l.item.itemNum===itemNum);
+    if(!line)return;
+
+    const current=Number(line.price)||0;
+    const answer=window.prompt(
+      'Nuevo precio para este producto:\n\n'+
+      (line.item.description||'')+
+      '\nItem # '+itemNum,
+      current.toFixed(2)
+    );
+
+    if(answer===null)return;
+
+    const clean=String(answer).replace('$','').replace(',','').trim();
+    const price=parseFloat(clean);
+
+    if(isNaN(price)||price<0){
+      alert('Precio inválido.');
+      return;
+    }
+
+    setCart(prev=>prev.map(l=>{
+      if(l.item.itemNum!==itemNum)return l;
+      return Object.assign({},l,{price});
+    }));
+
+    setTimeout(()=>{
+      setCartTotal('');
+      manualRef.current&&manualRef.current.focus();
+    },100);
+  };
+
+  const editCheckoutTotal=()=>{
+    const current=Number(parseFloat(cartTotal)||cartSubtotal||0);
+    const answer=window.prompt(
+      'Monto final del checkout:',
+      current.toFixed(2)
+    );
+
+    if(answer===null)return;
+
+    const clean=String(answer).replace('$','').replace(',','').trim();
+    const total=parseFloat(clean);
+
+    if(isNaN(total)||total<0){
+      alert('Monto inválido.');
+      return;
+    }
+
+    setCartTotal(total.toFixed(2));
+  };
+
+
+const removeCartLine=itemNum=>{
     setCart(prev=>prev.filter(l=>l.item.itemNum!==itemNum));
   };
 
@@ -1765,6 +1820,50 @@ const newSales=[tx,...salesLog];setSalesLog(newSales);setLastResult(Object.assig
 
     document.body.appendChild(panel);
 
+    
+    if(cartQty>0){
+      const editPrices=document.createElement('button');
+      editPrices.textContent='💲 Cambiar precio';
+      editPrices.style.width='100%';
+      editPrices.style.background=C.yellow+'22';
+      editPrices.style.border='1px solid '+C.yellow;
+      editPrices.style.color=C.yellow;
+      editPrices.style.borderRadius='10px';
+      editPrices.style.padding='10px';
+      editPrices.style.marginTop='8px';
+      editPrices.style.fontWeight='800';
+      editPrices.style.fontSize='12px';
+      editPrices.style.fontFamily='monospace';
+      editPrices.style.cursor='pointer';
+      editPrices.onclick=()=>{
+        if(cart.length===1){
+          editCartLinePrice(cart[0].item.itemNum);
+          return;
+        }
+
+        const list=cart.map((l,i)=>{
+          return (i+1)+'. #'+l.item.itemNum+'  $'+Number(l.price||0).toFixed(2)+'  '+(l.item.description||'');
+        }).join('\n');
+
+        const answer=window.prompt(
+          '¿Cuál producto quieres cambiar?\n\n'+list+'\n\nEscribe el número de la lista:',
+          '1'
+        );
+
+        if(answer===null)return;
+
+        const idx=(parseInt(answer,10)||0)-1;
+        if(!cart[idx]){
+          alert('Selección inválida.');
+          return;
+        }
+
+        editCartLinePrice(cart[idx].item.itemNum);
+      };
+      panel.appendChild(editPrices);
+    }
+
+
     if(checkoutOpen){
       const overlay=document.createElement('div');
       overlay.id='pos-checkout-modal';
@@ -1845,6 +1944,23 @@ const newSales=[tx,...salesLog];setSalesLog(newSales);setLastResult(Object.assig
       inputWrap.appendChild(dollar);
       inputWrap.appendChild(input);
       box.appendChild(inputWrap);
+
+      const editTotalBtn=document.createElement('button');
+      editTotalBtn.textContent='✏️ Modificar monto final';
+      editTotalBtn.style.width='100%';
+      editTotalBtn.style.background=C.yellow+'22';
+      editTotalBtn.style.border='1px solid '+C.yellow;
+      editTotalBtn.style.color=C.yellow;
+      editTotalBtn.style.borderRadius='10px';
+      editTotalBtn.style.padding='10px';
+      editTotalBtn.style.marginBottom='14px';
+      editTotalBtn.style.fontWeight='800';
+      editTotalBtn.style.fontSize='12px';
+      editTotalBtn.style.fontFamily='monospace';
+      editTotalBtn.style.cursor='pointer';
+      editTotalBtn.onclick=editCheckoutTotal;
+      box.appendChild(editTotalBtn);
+
 
       const payTitle=document.createElement('div');
       payTitle.textContent='Método de pago';
