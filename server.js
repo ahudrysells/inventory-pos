@@ -586,6 +586,27 @@ app.post('/api/sale', async (req, res) => {
   }
 });
 
+
+
+app.delete('/api/sale/:sid/:saleId', async (req, res) => {
+  try {
+    const { sid, saleId } = req.params;
+
+    if (!sid || !saleId) {
+      return res.status(400).json({ error: 'Missing sid or saleId' });
+    }
+
+    const r = await pool.query(
+      'DELETE FROM pos_sales WHERE session_id=$1 AND id=$2 RETURNING id',
+      [sid, saleId]
+    );
+
+    res.json({ ok: true, deleted: r.rowCount });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/events/:sid', (req, res) => {
   const { sid } = req.params;
 

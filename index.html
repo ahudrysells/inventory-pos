@@ -2668,6 +2668,59 @@ if(!sessionId){
   const ResultCard=lastResult?React.createElement('div',{style:{margin:'8px 12px 0'}},React.createElement('div',{style:{background:lastResult.status==='found'||lastResult.status==='sold'?'#0a1f0e':lastResult.status==='nostock'?'#1f1200':'#1f0a0e',border:'1px solid '+(lastResult.status==='found'||lastResult.status==='sold'?C.green:lastResult.status==='nostock'?C.orange:C.red),borderRadius:12,padding:'12px 14px'}},lastResult.status==='found'&&React.createElement('div',{style:{display:'flex',gap:12,alignItems:'flex-start'}},React.createElement('span',{style:{fontSize:26}},'✅'),React.createElement('div',{style:{flex:1,minWidth:0}},React.createElement('div',{style:{fontWeight:700,fontSize:13,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},lastResult.description),React.createElement('div',{style:{color:C.muted,fontSize:11}},lastResult.brand,' · #',lastResult.itemNum,' · ',fmt(lastResult.unitRetail)),React.createElement('div',{style:{marginTop:6,display:'flex',gap:16}},React.createElement('div',null,React.createElement('span',{style:{color:C.muted,fontSize:10}},'REC: '),React.createElement('span',{style:{color:C.green,fontWeight:700,fontSize:16}},received[lastResult.itemNum]||0)),React.createElement('div',null,React.createElement('span',{style:{color:C.muted,fontSize:10}},'ESP: '),React.createElement('span',{style:{color:C.text,fontWeight:700,fontSize:16}},lastResult.qty))))),lastResult.status==='sold'&&React.createElement('div',{style:{display:'flex',gap:12,alignItems:'flex-start'}},React.createElement('span',{style:{fontSize:26}},'💰'),React.createElement('div',{style:{flex:1,minWidth:0}},React.createElement('div',{style:{fontWeight:700,fontSize:13,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},lastResult.description),React.createElement('div',{style:{color:C.muted,fontSize:11}},lastResult.brand),React.createElement('div',{style:{marginTop:6,display:'flex',gap:14,alignItems:'center'}},React.createElement('div',{style:{color:C.green,fontSize:22,fontWeight:700}},fmt(lastResult.price)),React.createElement('div',{style:{color:PAY.find(p=>p.id===lastResult.payMethod)&&PAY.find(p=>p.id===lastResult.payMethod).color,fontSize:13,fontWeight:700}},PAY.find(p=>p.id===lastResult.payMethod)&&PAY.find(p=>p.id===lastResult.payMethod).label),React.createElement('div',{style:{color:C.muted,fontSize:11}},'Stock: ',stock[lastResult.itemNum]||0)))),lastResult.status==='nostock'&&React.createElement('div',{style:{display:'flex',gap:12,alignItems:'center'}},React.createElement('span',{style:{fontSize:26}},'📭'),React.createElement('div',null,React.createElement('div',{style:{color:C.orange,fontWeight:700,fontSize:13}},'Sin stock — ',lastResult.description))),lastResult.status==='miss'&&React.createElement('div',{style:{display:'flex',gap:12,alignItems:'center'}},React.createElement('span',{style:{fontSize:26}},'❌'),React.createElement('div',null,React.createElement('div',{style:{color:C.red,fontWeight:700,fontSize:13}},'No en manifiesto'),React.createElement('div',{style:{color:C.muted,fontSize:12}},'#',lastResult.itemNum))))):React.createElement('div',{style:{margin:'8px 12px 0'}},React.createElement('div',{style:{background:C.card,border:'1px dashed '+C.dim,borderRadius:12,padding:14,textAlign:'center',color:C.muted,fontSize:12,letterSpacing:1}},appMode==='receiving'?'Escanea o ingresa un Item # para comenzar':'Escanea o ingresa un Item # para registrar venta'));
   if(page==='home'){const totalSalesAll=manifests.reduce((s,m)=>{const sl=LS.get('pos_sales_'+m.id,[]);return s+sl.reduce((a,t)=>a+Number(t.price),0);},0);return React.createElement('div',{style:{minHeight:'100vh',background:C.bg,color:C.text,display:'flex',flexDirection:'column'}},React.createElement('div',{style:{background:C.panel,padding:'14px 16px',borderBottom:'1px solid '+C.border}},React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},React.createElement('div',null,React.createElement('h1',{style:{color:C.accent,fontSize:16,fontWeight:700,letterSpacing:2,textTransform:'uppercase'}},'📦 Klou POS'),React.createElement('div',{style:{color:C.green,fontSize:11,marginTop:2}},'🔗 Sesión: ',React.createElement('strong',null,sessionId))),React.createElement('button',{onClick:()=>setPage('settings'),style:{background:C.card,border:'1px solid '+C.border,borderRadius:8,padding:'8px 12px',color:C.muted,fontSize:16,cursor:'pointer'}},'⚙')),React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},React.createElement('div',{style:{background:C.card,borderRadius:8,padding:'10px 12px',border:'1px solid '+C.border}},React.createElement('div',{style:{color:C.accent,fontSize:20,fontWeight:700}},manifests.length),React.createElement('div',{style:{color:C.muted,fontSize:9,letterSpacing:1,textTransform:'uppercase'}},'Manifiestos')),React.createElement('div',{style:{background:C.card,borderRadius:8,padding:'10px 12px',border:'1px solid '+C.border}},React.createElement('div',{style:{color:C.green,fontSize:20,fontWeight:700}},fmt(totalSalesAll)),React.createElement('div',{style:{color:C.muted,fontSize:9,letterSpacing:1,textTransform:'uppercase'}},'Ventas Totales')))),React.createElement('div',{style:{padding:'12px 12px 0'}},React.createElement('input',{ref:fileRef,type:'file',accept:'.csv',style:{display:'none'},onChange:onFile}),React.createElement('button',{onClick:()=>fileRef.current&&fileRef.current.click(),style:{width:'100%',background:C.accent,color:C.bg,border:'none',borderRadius:12,padding:16,fontWeight:700,fontSize:14,cursor:'pointer',letterSpacing:2,textTransform:'uppercase'}},'+ Subir Nuevo Manifiesto CSV')),React.createElement('div',{style:{padding:'8px 12px 0',display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}},React.createElement('button',{onClick:()=>downloadCsv('sales'),style:{background:C.card,border:'1px solid '+C.green,borderRadius:8,padding:'10px 6px',color:C.green,fontWeight:700,fontSize:10,cursor:'pointer'}},'⬇ Ventas'),React.createElement('button',{onClick:()=>downloadCsv('received'),style:{background:C.card,border:'1px solid '+C.accent,borderRadius:8,padding:'10px 6px',color:C.accent,fontWeight:700,fontSize:10,cursor:'pointer'}},'⬇ Recibido'),React.createElement('button',{onClick:()=>downloadCsv('inventory'),style:{background:C.card,border:'1px solid '+C.yellow,borderRadius:8,padding:'10px 6px',color:C.yellow,fontWeight:700,fontSize:10,cursor:'pointer'}},'⬇ Stock')),React.createElement('div',{style:{flex:1,overflow:'auto',padding:'12px 12px 24px'}},manifests.length===0?React.createElement('div',{style:{textAlign:'center',padding:'40px 20px',color:C.muted}},React.createElement('div',{style:{fontSize:40,marginBottom:12}},'📄'),React.createElement('div',{style:{fontSize:13}},'No hay manifiestos aún')):manifests.map(m=>{const sl=LS.get('pos_sales_'+m.id,[]);const rcv=LS.get('pos_rcv_'+m.id,{});const tr=Object.values(rcv).reduce((s,v)=>s+v,0);const ts=sl.reduce((s,t)=>s+Number(t.price),0);return React.createElement('div',{key:m.id,onClick:()=>{setActiveId(m.id);setAppMode('receiving');setPage('recv');},style:{background:C.card,borderRadius:12,padding:'14px 16px',marginBottom:8,border:'1px solid '+C.border,cursor:'pointer'}},React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}},React.createElement('div',{style:{flex:1,minWidth:0}},React.createElement('div',{style:{fontWeight:700,fontSize:13,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},m.name),React.createElement('div',{style:{color:C.muted,fontSize:10,marginTop:2}},m.uploadedAt,' · ',m.items?m.items.length:0,' SKUs')),React.createElement('div',{style:{color:C.accent,fontSize:18,flexShrink:0,marginLeft:8}},'›')),React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}},[{l:'Recibidas',v:tr,c:C.green},{l:'Vendidas',v:sl.length,c:C.yellow},{l:'Ventas',v:fmt(ts),c:C.green}].map(s=>React.createElement('div',{key:s.l,style:{background:C.panel,borderRadius:7,padding:'6px 8px',textAlign:'center'}},React.createElement('div',{style:{color:s.c,fontSize:13,fontWeight:700}},s.v),React.createElement('div',{style:{color:C.muted,fontSize:9,textTransform:'uppercase'}},s.l)))));})));}
   if(page==='settings'){return React.createElement('div',{style:{minHeight:'100vh',background:C.bg,color:C.text,padding:20}},React.createElement('div',{style:{display:'flex',alignItems:'center',gap:12,marginBottom:24}},React.createElement('button',{onClick:()=>setPage('home'),style:{background:'none',border:'none',color:C.accent,cursor:'pointer',fontSize:22,padding:0}},'←'),React.createElement('span',{style:{fontWeight:700,letterSpacing:2,textTransform:'uppercase',fontSize:13}},'Configuración')),React.createElement('div',{style:{background:C.panel,borderRadius:12,padding:20,border:'1px solid '+C.border,marginBottom:16}},React.createElement('div',{style:{color:C.muted,fontSize:10,letterSpacing:2,textTransform:'uppercase',marginBottom:8}},'Código de Sesión'),React.createElement('div',{style:{color:C.green,fontSize:32,fontWeight:700,letterSpacing:6,textAlign:'center',padding:'16px 0'}},sessionId),React.createElement('div',{style:{color:C.muted,fontSize:12,textAlign:'center'}},'Comparte este código para sync multi-dispositivo')),React.createElement('button',{onClick:()=>{LS.set('pos_session',null);setSessionId(null);},style:{width:'100%',background:'#1a0505',border:'1px solid '+C.red,borderRadius:10,padding:14,color:C.red,fontWeight:700,cursor:'pointer',fontSize:13,letterSpacing:1,textTransform:'uppercase'}},'Cambiar Código de Sesión'));}
+
+  const deleteSaleMistake=async(tx)=>{
+    if(!tx)return;
+
+    const saleId=String(tx.id||'');
+    const itemNum=String(tx.item_num||tx.itemNum||'');
+
+    if(!saleId){
+      alert('Esta venta no tiene ID para borrar.');
+      return;
+    }
+
+    const ok=window.confirm(
+      '¿Borrar esta venta por equivocación?\n\n'+
+      'Item # '+itemNum+'\n'+
+      (tx.description||'')+'\n'+
+      'Precio: $'+Number(tx.price||0).toFixed(2)
+    );
+
+    if(!ok)return;
+
+    try{
+      const res=await fetch(
+        '/api/sale/'+encodeURIComponent(sessionId)+'/'+encodeURIComponent(saleId),
+        {method:'DELETE'}
+      );
+
+      const data=await res.json().catch(()=>({}));
+
+      if(!res.ok || data.error){
+        throw new Error(data.error||'No se pudo borrar la venta.');
+      }
+
+      const newSales=salesLog.filter(t=>String(t.id||'')!==saleId);
+
+      setSalesLog(newSales);
+      LS.set('pos_sales_'+activeId,newSales);
+
+      setSyncDot('ok');
+      setTimeout(()=>setSyncDot(''),1500);
+
+      setLastResult({
+        status:'deleted',
+        itemNum:itemNum,
+        description:tx.description||'Venta borrada'
+      });
+    }catch(e){
+      setSyncDot('err');
+      alert('No se pudo borrar: '+e.message);
+    }
+  };
+
+
   if(page==='summary'){
     const missing=activeManifest&&activeManifest.items?activeManifest.items.filter(i=>!received[i.itemNum]):[];
     const salesRows=salesLog.map((t,i)=>{
@@ -2790,7 +2843,8 @@ if(!sessionId){
         ),
         React.createElement('div',{style:{textAlign:'right',flexShrink:0}},
           React.createElement('div',{style:{color:pay.color,fontWeight:700,fontSize:14}},fmt(t.price))
-        )
+        ),
+        React.createElement('button',{onClick:e=>{e.stopPropagation();deleteSaleMistake(t);},title:'Borrar venta por equivocación',style:{background:C.red+'18',border:'1px solid '+C.red,borderRadius:8,color:C.red,fontSize:13,fontWeight:900,padding:'6px 8px',cursor:'pointer',flexShrink:0}},'↩️')
       );
     });
     return React.createElement('div',{style:{minHeight:'100vh',background:bg,transition:'background .15s',color:C.text,display:'flex',flexDirection:'column'}},
