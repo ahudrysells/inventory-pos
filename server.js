@@ -7,6 +7,33 @@ const app = express();
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+
+app.get('/api/debug/all-sales', async(req,res)=>{
+  try{
+    const key=req.query.key;
+    const sid=req.query.sid || '';
+
+    if(key !== 'lu-find-sales'){
+      return res.status(403).json({error:'Forbidden'});
+    }
+
+    const r = await pool.query(
+      `SELECT id, session_id, manifest_id, item_num, description, brand, price, pay_method, sale_time, created_at
+       FROM pos_sales
+       WHERE ($1 = '' OR session_id = $1)
+       ORDER BY created_at DESC
+       LIMIT 500`,
+      [sid]
+    );
+
+    res.json(r.rows);
+  }catch(e){
+    res.status(500).json({error:e.message});
+  }
+});
+
+
 app.use(express.static(__dirname));
 
 const pool = new Pool({
@@ -390,34 +417,6 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 8080;
-
-
-
-app.get('/api/debug/all-sales', async(req,res)=>{
-  try{
-    const key=req.query.key;
-    const sid=req.query.sid || '';
-
-    if(key !== 'lu-find-sales'){
-      return res.status(403).json({error:'Forbidden'});
-    }
-
-    const r = await pool.query(
-      `SELECT id, session_id, manifest_id, item_num, description, brand, price, pay_method, sale_time, created_at
-       FROM pos_sales
-       WHERE ($1 = '' OR session_id = $1)
-       ORDER BY created_at DESC
-       LIMIT 500`,
-      [sid]
-    );
-
-    res.json(r.rows);
-  }catch(e){
-    res.status(500).json({error:e.message});
-  }
-});
-
-
 app.listen(PORT, () => {
   console.log('Running on port ' + PORT);
 });
