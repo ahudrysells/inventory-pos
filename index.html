@@ -1,5 +1,4 @@
-<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><meta name="mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-capable" content="yes"/><title>Klou POS</title><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script><script src="https://unpkg.com/html5-qrcode"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script><style>*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}body{background:#080c10;font-family:monospace;overscroll-behavior:none;}
+<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><meta name="mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-capable" content="yes"/><title>Klou POS</title><script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script><script src="https://unpkg.com/html5-qrcode"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script><style>*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}body{background:#080c10;font-family:monospace;overscroll-behavior:none;}
 /* Mobile floating buttons side by side */
 @media (max-width: 700px) {
   #pos-delete-manifest-button {
@@ -87,7 +86,6 @@ function App(){
   const [entryCode,setEntryCode]=useState(()=>genCode());
   const [manifests,setManifests]=useState([]);
   const [upcMap,setUpcMap]=useState(()=>LS.get('pos_upc_map',{}));
-  const upcMapRef=useRef(LS.get('pos_upc_map',{}));
   const [activeId,setActiveId]=useState(()=>LS.get('pos_active_manifest',null));
   const [appMode,setAppMode]=useState(()=>LS.get('pos_app_mode','receiving'));
   const [page,setPage]=useState(()=>LS.get('pos_page','home'));
@@ -155,7 +153,6 @@ function App(){
 
         LS.set('pos_upc_map',merged);
         setUpcMap(merged);
-        upcMapRef.current=merged;
 
         return merged;
       }
@@ -231,7 +228,7 @@ function App(){
   },[sessionId]);
 
   useEffect(()=>{if(!activeId||!sessionId)return;setReceived({});setSalesLog([]);setLastResult(null);loadData(activeId);if(evsRef.current)evsRef.current.close();const evs=new EventSource('/api/events/'+sessionId);evsRef.current=evs;evs.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==='receive'&&d.manifest_id===activeId){setReceived(prev=>({...prev,[d.item_num]:d.qty}));setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}if(d.type==='sale'&&d.manifest_id===activeId){setSalesLog(prev=>[d,...prev]);setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}}catch{}};return()=>{evs.close();};},[activeId,sessionId]);
-  useEffect(()=>{LS.set('pos_upc_map',upcMap);upcMapRef.current=upcMap;},[upcMap]);
+  useEffect(()=>{LS.set('pos_upc_map',upcMap);},[upcMap]);
   useEffect(()=>{
     if(!sessionId)return;
     loadBarcodes(sessionId);
@@ -439,9 +436,26 @@ function App(){
     return key ? map[key] : '';
   };
 
-  // Usar siempre el ref (sincrónico, nunca desactualizado)
-  let latestMap=upcMapRef.current||{};
+  let latestMap=Object.assign({},LS.get('pos_upc_map',{}),upcMap||{});
   let learnedItem=findLearnedItem(latestMap,raw);
+
+  // Si no lo encuentra localmente, consulta la base de datos antes de pedir Item #
+  if(!learnedItem && sessionId){
+    try{
+      const d=await api.get('/api/barcodes/'+sessionId);
+
+      if(d&&d.map){
+        latestMap=Object.assign({},latestMap,d.map);
+
+        LS.set('pos_upc_map',latestMap);
+        setUpcMap(latestMap);
+
+        learnedItem=findLearnedItem(latestMap,raw);
+      }
+    }catch(e){
+      console.log('Barcode lookup DB error',e.message);
+    }
+  }
 
   if(learnedItem){
     const cleanItem=String(learnedItem).trim().replace(/^#/,'');
@@ -467,7 +481,7 @@ function App(){
   setUpcInput('');
   stopCam();
   setTimeout(()=>upcRef.current&&upcRef.current.focus(),100);
-},[mMap,processCode]);
+},[upcMap,mMap,processCode,sessionId]);
 
   const onScan=useCallback(raw=>{
   raw=raw.toString().trim();
@@ -1198,9 +1212,8 @@ const newSales=[tx,...salesLog];setSalesLog(newSales);setLastResult(Object.assig
   const totalRcv=Object.values(received).reduce((s,v)=>s+v,0);
   const pct=totalExp>0?Math.round(totalRcv/totalExp*100):0;
   const salesByPay={cash:0,card:0,whatnot:0,gift:0};const cntByPay={cash:0,card:0,whatnot:0,gift:0};
-  const todaySales=salesLog.filter(t=>saleDateKey(t)===todayISO());
-  todaySales.forEach(t=>{const pm=t.pay_method||t.payMethod;if(salesByPay[pm]!==undefined){salesByPay[pm]+=Number(t.price);cntByPay[pm]+=1;}});
-  const totalSales=todaySales.reduce((s,t)=>s+Number(t.price),0);
+  salesLog.forEach(t=>{const pm=t.pay_method||t.payMethod;if(salesByPay[pm]!==undefined){salesByPay[pm]+=Number(t.price);cntByPay[pm]+=1;}});
+  const totalSales=salesLog.reduce((s,t)=>s+Number(t.price),0);
   const totalStockLeft=Object.values(stock).reduce((s,v)=>s+v,0);
 
   const saveDamagedQty=async(itemNum,qty)=>{
@@ -2192,49 +2205,57 @@ const removeCartLine=itemNum=>{
   };
 
   const downloadSalesToday=()=>{
-    if(!activeManifest||typeof XLSX==='undefined'){alert('Libreria Excel no cargada');return;}
-    var wb=XLSX.utils.book_new();
-    var byDay={};
-    salesLog.forEach(function(t){
-      var dk=saleDateKey(t)||'Sin fecha';
-      var dt=saleDateText(t)||dk;
-      if(!byDay[dk])byDay[dk]={date:dt,cash:0,card:0,whatnot:0,gift:0,qty:0,total:0};
-      var pm=t.pay_method||t.payMethod||'';
-      var pr=Number(t.price||0);
-      byDay[dk].qty+=1;byDay[dk].total+=pr;
-      if(pm==='cash')byDay[dk].cash+=pr;
-      else if(pm==='card')byDay[dk].card+=pr;
-      else if(pm==='whatnot')byDay[dk].whatnot+=pr;
-      else if(pm==='gift')byDay[dk].gift+=pr;
+    if(!activeManifest)return;
+
+    const today=todayISO();
+    const todays=salesLog.filter(t=>saleDateKey(t)===today);
+    const totalAmount=todays.reduce((sum,t)=>sum+Number(t.price||0),0);
+
+    const byPay={};
+    todays.forEach(t=>{
+      const pm=t.pay_method||t.payMethod||'unknown';
+      if(!byPay[pm])byPay[pm]={qty:0,total:0};
+      byPay[pm].qty+=1;
+      byPay[pm].total+=Number(t.price||0);
     });
-    var sortedDays=Object.keys(byDay).sort();
-    var totalRows=[['Fecha','Qty','Cash','Tarjeta','Whatnot','Gift','Total']];
-    var gQty=0,gCash=0,gCard=0,gWhatnot=0,gGift=0,gTotal=0;
-    sortedDays.forEach(function(dk){
-      var d=byDay[dk];
-      totalRows.push([d.date,d.qty,+d.cash.toFixed(2),+d.card.toFixed(2),+d.whatnot.toFixed(2),+d.gift.toFixed(2),+d.total.toFixed(2)]);
-      gQty+=d.qty;gCash+=d.cash;gCard+=d.card;gWhatnot+=d.whatnot;gGift+=d.gift;gTotal+=d.total;
+
+    const rows=[
+      ['Klou POS - Ventas de Hoy'],
+      ['Manifest',activeManifest.name||activeManifest.id],
+      ['Session',sessionId],
+      ['Date',today],
+      ['Cantidad Vendida Total',todays.length],
+      ['Total Vendido',totalAmount.toFixed(2)],
+      [],
+      ['Resumen por Metodo de Pago'],
+      ['Metodo de Pago','Cantidad Vendida','Total Vendido']
+    ];
+
+    Object.keys(byPay).forEach(pm=>{
+      rows.push([pm,byPay[pm].qty,byPay[pm].total.toFixed(2)]);
     });
-    totalRows.push([]);
-    totalRows.push(['TOTAL',gQty,+gCash.toFixed(2),+gCard.toFixed(2),+gWhatnot.toFixed(2),+gGift.toFixed(2),+gTotal.toFixed(2)]);
-    var wsTot=XLSX.utils.aoa_to_sheet(totalRows);
-    wsTot['!cols']=[{wch:14},{wch:8},{wch:10},{wch:10},{wch:10},{wch:8},{wch:10}];
-    XLSX.utils.book_append_sheet(wb,wsTot,'Ventas Totales');
-    sortedDays.forEach(function(dk){
-      var d=byDay[dk];
-      var dayLog=salesLog.filter(function(t){return saleDateKey(t)===dk;});
-      var rows=[['Klou POS - '+d.date],['Manifest',activeManifest.name||activeManifest.id],[],['Hora','Item #','Descripcion','Brand','Precio','Pago']];
-      dayLog.forEach(function(t){
-        rows.push([t.sale_time||t.time||'',t.item_num||t.itemNum||'',t.description||'',t.brand||'',Number(t.price||0),t.pay_method||t.payMethod||'']);
-      });
-      rows.push([]);
-      rows.push(['','','','Total',+d.total.toFixed(2),'']);
-      var ws=XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols']=[{wch:10},{wch:10},{wch:30},{wch:14},{wch:8},{wch:12}];
-      var sName=d.date.split('/').join('-').slice(0,31);
-      XLSX.utils.book_append_sheet(wb,ws,sName);
+
+    rows.push([]);
+    rows.push(['Transacciones']);
+    rows.push(['Fecha','Hora','Item #','Description','Brand','Precio Vendido','Metodo de Pago','Manifest']);
+
+    todays.forEach(t=>{
+      rows.push([
+        saleDateText(t),
+        t.sale_time||t.time||'',
+        t.item_num||t.itemNum||'',
+        t.description||'',
+        t.brand||'',
+        Number(t.price||0).toFixed(2),
+        t.pay_method||t.payMethod||'',
+        activeManifest.name||activeManifest.id
+      ]);
     });
-    XLSX.writeFile(wb,'Klou_Ventas_'+safeFileName(activeManifest.name)+'_'+todayISO()+'.xlsx');
+
+    downloadCSV(
+      'ventas_de_hoy_'+safeFileName(activeManifest.name)+'_'+today+'.csv',
+      rows
+    );
   };
 
   useEffect(()=>{
@@ -2928,7 +2949,7 @@ if(!sessionId){
   }
 
   if(page==='pos'){
-    const salesRows=todaySales.map((t,i)=>{
+    const salesRows=salesLog.map((t,i)=>{
       const pm=t.pay_method||t.payMethod;
       const pay=PAY.find(p=>p.id===pm)||PAY[0];
       return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid '+C.dim}},
@@ -2950,7 +2971,7 @@ if(!sessionId){
         React.createElement('div',null,
           React.createElement('button',{onClick:goHome,style:{background:'none',border:'none',color:C.muted,fontSize:11,cursor:'pointer',letterSpacing:1,textTransform:'uppercase',padding:0,marginBottom:2}},'← Inicio'),
           React.createElement('div',{style:{color:C.green,fontSize:22,fontWeight:700,lineHeight:1.1}},fmt(totalSales)),
-          React.createElement('div',{style:{color:C.muted,fontSize:11}},todaySales.length,' hoy')
+          React.createElement('div',{style:{color:C.muted,fontSize:11}},salesLog.length,' vendidas')
         ),
         React.createElement('div',{style:{background:C.card,borderRadius:10,padding:'8px 12px',border:'1px solid '+C.border,textAlign:'center'}},
           React.createElement('div',{style:{color:C.muted,fontSize:9,textTransform:'uppercase',letterSpacing:1}},'Stock'),
