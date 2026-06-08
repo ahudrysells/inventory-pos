@@ -86,6 +86,7 @@ function App(){
   const [entryCode,setEntryCode]=useState(()=>genCode());
   const [manifests,setManifests]=useState([]);
   const [upcMap,setUpcMap]=useState(()=>LS.get('pos_upc_map',{}));
+  const upcMapRef=useRef(LS.get('pos_upc_map',{}));
   const [activeId,setActiveId]=useState(()=>LS.get('pos_active_manifest',null));
   const [appMode,setAppMode]=useState(()=>LS.get('pos_app_mode','receiving'));
   const [page,setPage]=useState(()=>LS.get('pos_page','home'));
@@ -153,6 +154,7 @@ function App(){
 
         LS.set('pos_upc_map',merged);
         setUpcMap(merged);
+        upcMapRef.current=merged;
 
         return merged;
       }
@@ -228,7 +230,7 @@ function App(){
   },[sessionId]);
 
   useEffect(()=>{if(!activeId||!sessionId)return;setReceived({});setSalesLog([]);setLastResult(null);loadData(activeId);if(evsRef.current)evsRef.current.close();const evs=new EventSource('/api/events/'+sessionId);evsRef.current=evs;evs.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==='receive'&&d.manifest_id===activeId){setReceived(prev=>({...prev,[d.item_num]:d.qty}));setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}if(d.type==='sale'&&d.manifest_id===activeId){setSalesLog(prev=>[d,...prev]);setSyncDot('ok');setTimeout(()=>setSyncDot(''),1500);}}catch{}};return()=>{evs.close();};},[activeId,sessionId]);
-  useEffect(()=>{LS.set('pos_upc_map',upcMap);},[upcMap]);
+  useEffect(()=>{LS.set('pos_upc_map',upcMap);upcMapRef.current=upcMap;},[upcMap]);
   useEffect(()=>{
     if(!sessionId)return;
     loadBarcodes(sessionId);
@@ -436,26 +438,9 @@ function App(){
     return key ? map[key] : '';
   };
 
-  let latestMap=Object.assign({},LS.get('pos_upc_map',{}),upcMap||{});
+  // Usar siempre el ref (sincrónico, nunca desactualizado)
+  let latestMap=upcMapRef.current||{};
   let learnedItem=findLearnedItem(latestMap,raw);
-
-  // Si no lo encuentra localmente, consulta la base de datos antes de pedir Item #
-  if(!learnedItem && sessionId){
-    try{
-      const d=await api.get('/api/barcodes/'+sessionId);
-
-      if(d&&d.map){
-        latestMap=Object.assign({},latestMap,d.map);
-
-        LS.set('pos_upc_map',latestMap);
-        setUpcMap(latestMap);
-
-        learnedItem=findLearnedItem(latestMap,raw);
-      }
-    }catch(e){
-      console.log('Barcode lookup DB error',e.message);
-    }
-  }
 
   if(learnedItem){
     const cleanItem=String(learnedItem).trim().replace(/^#/,'');
@@ -481,7 +466,7 @@ function App(){
   setUpcInput('');
   stopCam();
   setTimeout(()=>upcRef.current&&upcRef.current.focus(),100);
-},[upcMap,mMap,processCode,sessionId]);
+},[mMap,processCode]);
 
   const onScan=useCallback(raw=>{
   raw=raw.toString().trim();
