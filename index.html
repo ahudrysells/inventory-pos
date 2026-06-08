@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><meta name="mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-capable" content="yes"/><title>Klou POS</title><script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script><script src="https://unpkg.com/html5-qrcode"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script><style>*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}body{background:#080c10;font-family:monospace;overscroll-behavior:none;}
+<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><meta name="mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-capable" content="yes"/><title>Klou POS</title><script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script><script src="https://unpkg.com/html5-qrcode"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script><style>*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}body{background:#080c10;font-family:monospace;overscroll-behavior:none;}
 /* Mobile floating buttons side by side */
 @media (max-width: 700px) {
   #pos-delete-manifest-button {
@@ -1197,8 +1198,9 @@ const newSales=[tx,...salesLog];setSalesLog(newSales);setLastResult(Object.assig
   const totalRcv=Object.values(received).reduce((s,v)=>s+v,0);
   const pct=totalExp>0?Math.round(totalRcv/totalExp*100):0;
   const salesByPay={cash:0,card:0,whatnot:0,gift:0};const cntByPay={cash:0,card:0,whatnot:0,gift:0};
-  salesLog.forEach(t=>{const pm=t.pay_method||t.payMethod;if(salesByPay[pm]!==undefined){salesByPay[pm]+=Number(t.price);cntByPay[pm]+=1;}});
-  const totalSales=salesLog.reduce((s,t)=>s+Number(t.price),0);
+  const todaySales=salesLog.filter(t=>saleDateKey(t)===todayISO());
+  todaySales.forEach(t=>{const pm=t.pay_method||t.payMethod;if(salesByPay[pm]!==undefined){salesByPay[pm]+=Number(t.price);cntByPay[pm]+=1;}});
+  const totalSales=todaySales.reduce((s,t)=>s+Number(t.price),0);
   const totalStockLeft=Object.values(stock).reduce((s,v)=>s+v,0);
 
   const saveDamagedQty=async(itemNum,qty)=>{
@@ -2190,57 +2192,70 @@ const removeCartLine=itemNum=>{
   };
 
   const downloadSalesToday=()=>{
-    if(!activeManifest)return;
+    if(!activeManifest||typeof XLSX==='undefined')return;
 
-    const today=todayISO();
-    const todays=salesLog.filter(t=>saleDateKey(t)===today);
-    const totalAmount=todays.reduce((sum,t)=>sum+Number(t.price||0),0);
+    const wb=XLSX.utils.book_new();
 
-    const byPay={};
-    todays.forEach(t=>{
-      const pm=t.pay_method||t.payMethod||'unknown';
-      if(!byPay[pm])byPay[pm]={qty:0,total:0};
-      byPay[pm].qty+=1;
-      byPay[pm].total+=Number(t.price||0);
+    const byDay={};
+    salesLog.forEach(t=>{
+      const dk=saleDateKey(t)||'Sin fecha';
+      const dt=saleDateText(t)||dk;
+      if(!byDay[dk])byDay[dk]={date:dt,dateKey:dk,cash:0,card:0,whatnot:0,gift:0,qty:0,total:0};
+      const pm=t.pay_method||t.payMethod||'';
+      const pr=Number(t.price||0);
+      byDay[dk].qty+=1;
+      byDay[dk].total+=pr;
+      if(pm==='cash')byDay[dk].cash+=pr;
+      else if(pm==='card')byDay[dk].card+=pr;
+      else if(pm==='whatnot')byDay[dk].whatnot+=pr;
+      else if(pm==='gift')byDay[dk].gift+=pr;
     });
 
-    const rows=[
-      ['Klou POS - Ventas de Hoy'],
-      ['Manifest',activeManifest.name||activeManifest.id],
-      ['Session',sessionId],
-      ['Date',today],
-      ['Cantidad Vendida Total',todays.length],
-      ['Total Vendido',totalAmount.toFixed(2)],
-      [],
-      ['Resumen por Metodo de Pago'],
-      ['Metodo de Pago','Cantidad Vendida','Total Vendido']
-    ];
+    const sortedDays=Object.keys(byDay).sort();
 
-    Object.keys(byPay).forEach(pm=>{
-      rows.push([pm,byPay[pm].qty,byPay[pm].total.toFixed(2)]);
+    const totalRows=[['Fecha','Qty Vendidas','💵 Cash','💳 Tarjeta','📱 Whatnot','🎁 Gift','💰 Total']];
+    let grandQty=0,grandCash=0,grandCard=0,grandWhatnot=0,grandGift=0,grandTotal=0;
+    sortedDays.forEach(dk=>{
+      const d=byDay[dk];
+      totalRows.push([d.date,d.qty,Number(d.cash.toFixed(2)),Number(d.card.toFixed(2)),Number(d.whatnot.toFixed(2)),Number(d.gift.toFixed(2)),Number(d.total.toFixed(2))]);
+      grandQty+=d.qty;grandCash+=d.cash;grandCard+=d.card;grandWhatnot+=d.whatnot;grandGift+=d.gift;grandTotal+=d.total;
+    });
+    totalRows.push([]);
+    totalRows.push(['TOTAL',grandQty,Number(grandCash.toFixed(2)),Number(grandCard.toFixed(2)),Number(grandWhatnot.toFixed(2)),Number(grandGift.toFixed(2)),Number(grandTotal.toFixed(2))]);
+
+    const wsTotales=XLSX.utils.aoa_to_sheet(totalRows);
+    wsTotales['!cols']=[{wch:14},{wch:14},{wch:12},{wch:12},{wch:12},{wch:10},{wch:12}];
+    XLSX.utils.book_append_sheet(wb,wsTotales,'Ventas Totales');
+
+    sortedDays.forEach(dk=>{
+      const d=byDay[dk];
+      const dayLog=salesLog.filter(t=>saleDateKey(t)===dk);
+      const sheetRows=[
+        ['Klou POS - '+d.date],
+        ['Manifest',activeManifest.name||activeManifest.id],
+        [],
+        ['Hora','Item #','Descripcion','Brand','Precio','Metodo de Pago']
+      ];
+      dayLog.forEach(t=>{
+        sheetRows.push([
+          t.sale_time||t.time||'',
+          t.item_num||t.itemNum||'',
+          t.description||'',
+          t.brand||'',
+          Number(t.price||0),
+          t.pay_method||t.payMethod||''
+        ]);
+      });
+      sheetRows.push([]);
+      sheetRows.push(['','','','Total',Number(d.total.toFixed(2)),'']);
+      const ws=XLSX.utils.aoa_to_sheet(sheetRows);
+      ws['!cols']=[{wch:12},{wch:12},{wch:32},{wch:16},{wch:10},{wch:14}];
+      const sheetName=d.date.replace(/[\/\?*\[\]:]/g,'-').slice(0,31);
+      XLSX.utils.book_append_sheet(wb,ws,sheetName);
     });
 
-    rows.push([]);
-    rows.push(['Transacciones']);
-    rows.push(['Fecha','Hora','Item #','Description','Brand','Precio Vendido','Metodo de Pago','Manifest']);
-
-    todays.forEach(t=>{
-      rows.push([
-        saleDateText(t),
-        t.sale_time||t.time||'',
-        t.item_num||t.itemNum||'',
-        t.description||'',
-        t.brand||'',
-        Number(t.price||0).toFixed(2),
-        t.pay_method||t.payMethod||'',
-        activeManifest.name||activeManifest.id
-      ]);
-    });
-
-    downloadCSV(
-      'ventas_de_hoy_'+safeFileName(activeManifest.name)+'_'+today+'.csv',
-      rows
-    );
+    const fileName='Klou_Ventas_'+safeFileName(activeManifest.name)+'_'+todayISO()+'.xlsx';
+    XLSX.writeFile(wb,fileName);
   };
 
   useEffect(()=>{
@@ -2934,7 +2949,7 @@ if(!sessionId){
   }
 
   if(page==='pos'){
-    const salesRows=salesLog.map((t,i)=>{
+    const salesRows=todaySales.map((t,i)=>{
       const pm=t.pay_method||t.payMethod;
       const pay=PAY.find(p=>p.id===pm)||PAY[0];
       return React.createElement('div',{key:i,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid '+C.dim}},
@@ -2956,7 +2971,7 @@ if(!sessionId){
         React.createElement('div',null,
           React.createElement('button',{onClick:goHome,style:{background:'none',border:'none',color:C.muted,fontSize:11,cursor:'pointer',letterSpacing:1,textTransform:'uppercase',padding:0,marginBottom:2}},'← Inicio'),
           React.createElement('div',{style:{color:C.green,fontSize:22,fontWeight:700,lineHeight:1.1}},fmt(totalSales)),
-          React.createElement('div',{style:{color:C.muted,fontSize:11}},salesLog.length,' vendidas')
+          React.createElement('div',{style:{color:C.muted,fontSize:11}},todaySales.length,' hoy')
         ),
         React.createElement('div',{style:{background:C.card,borderRadius:10,padding:'8px 12px',border:'1px solid '+C.border,textAlign:'center'}},
           React.createElement('div',{style:{color:C.muted,fontSize:9,textTransform:'uppercase',letterSpacing:1}},'Stock'),
