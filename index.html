@@ -2192,7 +2192,7 @@ const removeCartLine=itemNum=>{
   };
 
   const downloadSalesToday=()=>{
-    if(!activeManifest||typeof XLSX==='undefined'){alert('Error: libreria Excel no cargada');return;}
+    if(!activeManifest||typeof XLSX==='undefined'){alert('Libreria Excel no cargada');return;}
     var wb=XLSX.utils.book_new();
     var byDay={};
     salesLog.forEach(function(t){
@@ -2231,7 +2231,7 @@ const removeCartLine=itemNum=>{
       rows.push(['','','','Total',+d.total.toFixed(2),'']);
       var ws=XLSX.utils.aoa_to_sheet(rows);
       ws['!cols']=[{wch:10},{wch:10},{wch:30},{wch:14},{wch:8},{wch:12}];
-      var sName=d.date.replace(/[\/\\?*\[\]:]/g,'-').slice(0,31);
+      var sName=d.date.split('/').join('-').slice(0,31);
       XLSX.utils.book_append_sheet(wb,ws,sName);
     });
     XLSX.writeFile(wb,'Klou_Ventas_'+safeFileName(activeManifest.name)+'_'+todayISO()+'.xlsx');
